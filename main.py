@@ -16,7 +16,9 @@ def run_flask():
     app.run(host='0.0.0.0', port=8080)
 
 # === Config & Env ===
-API_KEY = os.environ.get("MORALIS_API")
+# Lire l'API key depuis le fichier secret sur Render
+with open("/etc/secrets/MORALIS_API") as f:
+    API_KEY = f.read().strip()
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 CHAT_ID = os.environ.get("CHAT_ID")
 
