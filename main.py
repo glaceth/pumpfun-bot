@@ -19,8 +19,11 @@ def run_flask():
 # Lire l'API key depuis le fichier secret sur Render
 with open("/etc/secrets/MORALIS_API") as f:
     API_KEY = f.read().strip()
-TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
-CHAT_ID = os.environ.get("CHAT_ID")
+with open("/etc/secrets/TELEGRAM_TOKEN") as f:
+    TELEGRAM_TOKEN = f.read().strip()
+
+with open("/etc/secrets/CHAT_ID") as f:
+    CHAT_ID = f.read().strip()
 
 MEMORY_FILE = "token_memory_ultimate.json"
 LOG_FILE = "token_daily_log.json"
