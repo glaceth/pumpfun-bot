@@ -28,7 +28,20 @@ HEADERS = {
 }
 
 
-def get_rugscore(token_address):
+
+def get_rugcheck_data(token_address):
+    try:
+        url = f"https://api.rugcheck.xyz/tokens/{token_address}"
+        response = requests.get(url)
+        data = response.json()
+        score = data.get("score", 0)
+        honeypot = data.get("honeypot", False)
+        lp_locked = data.get("liquidityLocked", True)
+        return score, honeypot, lp_locked
+    except Exception as e:
+        print(f"❌ Rugcheck failed for {token_address}: {e}")
+        return 0, False, True
+
     try:
         url = f"https://api.rugcheck.xyz/tokens/{token_address}"
         response = requests.get(url)
@@ -87,7 +100,11 @@ def check_tokens():
         mc = float(token.get("fullyDilutedValuation") or 0)
         lq = float(token.get("liquidity") or 0)
         mentions = token.get("mentions") or 0
-        rugscore = get_rugscore(token_address)
+        rugscore, honeypot, lp_locked = get_rugcheck_data(token_address)
+        if honeypot:
+            print(f"❌ {name} bloqué (honeypot détecté)")
+            memory[token_address] = now
+            continue
         age = float(token.get("age") or 0)
         holders = token.get("holders") or 0
 
@@ -104,7 +121,8 @@ def check_tokens():
         msg += f"*Token:* ${symbol}\n"
         msg += f"*Market Cap:* {'{:,}'.format(int(mc))} | *Volume 1h:* {'{:,}'.format(int(lq))}\n"
         msg += f"*Holders:* {'{:,}'.format(int(holders))}\n"
-        msg += f"*Rugscore:* {rugscore} ✅ | *TweetScout:* {mentions} mentions 🔥\n"
+        msg += f"*Rugscore:* {rugscore} ✅ | ⚠️ LP Not Locked |  
+        msg += *TweetScout:* {mentions} mentions 🔥\n"
         msg += "*Smart Wallet Buy:* 8.5 SOL (WinRate: 78%)\n"
         msg += "✅ Token SAFE – LP Locked, No Honeypot\n"
         msg += f"➤ [Pump.fun](https://pump.fun/{token_address}) | [Scamer.io](https://ai.scamr.xyz/token/{token_address}) | [Rugcheck](https://rugcheck.xyz/tokens/{token_address}) | [BubbleMaps](https://app.bubblemaps.io/token/solana/{token_address}) | [Twitter Search](https://twitter.com/search?q={symbol}&src=typed_query&f=live) | [Axiom](https://axiom.trade/meme/{token_address})"
