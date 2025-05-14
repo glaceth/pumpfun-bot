@@ -109,7 +109,7 @@ def check_tokens():
         if lp_locked is True and honeypot is False:
             msg += "✅ Token SAFE – LP Locked, No Honeypot\n"
 
-        msg += f"➤ [Pump.fun](https://pump.fun/{token_address}) | [Scamr](https://ai.scamr.xyz/token/{token_address}) | [Rugcheck](https://rugcheck.xyz/tokens/{token_address}) | [BubbleMaps](https://app.bubblemaps.io/token/solana/{token_address}) | [Twitter Search](https://twitter.com/search?q={symbol}&src=typed_query&f=live) | [Trade on Axiom](https://axiom.trade/@glace)\n"
+        msg += f"➤ [Pump.fun](https://pump.fun/{token_address}) | [Scamr](https://ai.scamr.xyz/token/{token_address}) | [Rugcheck](https://rugcheck.xyz/tokens/{token_address}) | [BubbleMaps](https://app.bubblemaps.io/sol/token/{token_address}) | [Twitter Search](https://twitter.com/search?q={symbol}&src=typed_query&f=live) | [Trade on Axiom](https://axiom.trade/@glace)\n"
         msg += f"*Token adresse:* `{token_address}`"
 
         send_telegram_message(msg)
