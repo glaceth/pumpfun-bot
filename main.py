@@ -100,26 +100,39 @@ def save_memory(memory):
 # === Récupérer infos d’un token ===
 def get_token_details(mint):
     stats = {}
-    try:
-        vol = requests.get(f"{BASE_URL}/volume?tokenAddress={mint}", headers=HEADERS).json()
-        stats["volume1h"] = vol.get("volume1hQuote", 0)
-        stats["volume24h"] = vol.get("volume24hQuote", 0)
+    print(f"[🌀] Récupération des détails pour {mint}...")
 
-        holders = requests.get(f"{BASE_URL}/holders?tokenAddress={mint}", headers=HEADERS).json()
-        top10 = holders.get("topHolders", [])[:10]
+    try:
+        vol = requests.get(f"{BASE_URL}/volume?tokenAddress={mint}", headers=HEADERS)
+        print(f"[📊] Volume status: {vol.status_code}")
+        vol_data = vol.json()
+        stats["volume1h"] = vol_data.get("volume1hQuote", 0)
+        stats["volume24h"] = vol_data.get("volume24hQuote", 0)
+
+        holders = requests.get(f"{BASE_URL}/holders?tokenAddress={mint}", headers=HEADERS)
+        print(f"[👥] Holders status: {holders.status_code}")
+        top10 = holders.json().get("topHolders", [])[:10]
         stats["top10pct"] = sum(h.get("percentage", 0) for h in top10)
 
-        snipers = requests.get(f"{BASE_URL}/snipers?tokenAddress={mint}", headers=HEADERS).json()
-        stats["sniper_count"] = len(snipers.get("result", []))
+        snipers = requests.get(f"{BASE_URL}/snipers?tokenAddress={mint}", headers=HEADERS)
+        print(f"[🎯] Snipers status: {snipers.status_code}")
+        stats["sniper_count"] = len(snipers.json().get("result", []))
 
-        swaps = requests.get(f"{BASE_URL}/swaps?tokenAddress={mint}", headers=HEADERS).json()
-        buy_amount = sum(tx.get("quoteAmount", 0) for tx in swaps.get("result", []) if tx.get("side") == "buy")
+        swaps = requests.get(f"{BASE_URL}/swaps?tokenAddress={mint}", headers=HEADERS)
+        print(f"[💰] Swaps status: {swaps.status_code}")
+        buy_amount = 0
+        for tx in swaps.json().get("result", []):
+            if tx.get("side") == "buy":
+                buy_amount += tx.get("quoteAmount", 0)
         stats["buy_total"] = buy_amount
-    
+
+        print(f"[✅] Détails récupérés pour {mint}.\n")
+
     except Exception as e:
-        print(f"[{mint}] Erreur stats avancées : {e}")
+        print(f"[❌] Erreur récupération Moralis pour {mint} : {e}")
 
     return stats
+
 
 # === Scanner les tokens gradués ===
 def check_tokens():
