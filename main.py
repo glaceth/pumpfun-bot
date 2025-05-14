@@ -121,8 +121,7 @@ def check_tokens():
         msg += f"*Token:* ${symbol}\n"
         msg += f"*Market Cap:* {'{:,}'.format(int(mc))} | *Volume 1h:* {'{:,}'.format(int(lq))}\n"
         msg += f"*Holders:* {'{:,}'.format(int(holders))}\n"
-        msg += f"*Rugscore:* {rugscore} ✅ | ⚠️ LP Not Locked |  
-        msg += *TweetScout:* {mentions} mentions 🔥\n"
+        msg += f"*Rugscore:* {rugscore} ✅ | ⚠️ LP Not Locked |  *TweetScout:* {mentions} mentions 🔥\n"
         msg += "*Smart Wallet Buy:* 8.5 SOL (WinRate: 78%)\n"
         msg += "✅ Token SAFE – LP Locked, No Honeypot\n"
         msg += f"➤ [Pump.fun](https://pump.fun/{token_address}) | [Scamer.io](https://ai.scamr.xyz/token/{token_address}) | [Rugcheck](https://rugcheck.xyz/tokens/{token_address}) | [BubbleMaps](https://app.bubblemaps.io/token/solana/{token_address}) | [Twitter Search](https://twitter.com/search?q={symbol}&src=typed_query&f=live) | [Axiom](https://axiom.trade/meme/{token_address})"
