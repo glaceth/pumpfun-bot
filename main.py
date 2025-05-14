@@ -1,4 +1,3 @@
-
 import requests
 import time
 import json
@@ -6,8 +5,9 @@ import os
 from datetime import datetime
 from threading import Thread
 from flask import Flask
+import subprocess
 
-# Flask keep-alive pour Replit
+# === Flask keep-alive ===
 app = Flask(__name__)
 @app.route('/')
 def home():
@@ -16,16 +16,23 @@ def home():
 def run_flask():
     app.run(host='0.0.0.0', port=8080)
 
-API_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+# === Lancer bonding_tracker.py automatiquement ===
+subprocess.Popen(["python", "bonding_tracker.py"])
+
+# === CONFIGURATION ===
+API_KEY = os.environ.get("MORALIS_API_KEY")
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
-CHAT_ID = "7604145219"
+CHAT_ID = os.environ.get("CHAT_ID")
+
 MEMORY_FILE = "token_memory_ultimate.json"
 LOG_FILE = "token_daily_log.json"
+BONDED_FILE = "token_bonded_list.json"
 
 MARKETCAP_THRESHOLD = 60000
 PROMETTEUR_THRESHOLD = 70000
 STEP_ALERT = 10000
 TOP10_ALERT_THRESHOLD = 85
+
 BASE_URL = "https://solana-gateway.moralis.io/token/mainnet/exchange/pumpfun"
 HEADERS = {
     "accept": "application/json",
@@ -164,13 +171,9 @@ def check_tokens():
     save_memory(memory)
     print(f"[{datetime.now().strftime('%H:%M:%S')}] ✅ Scan terminé")
 
-# Lancer le serveur Flask
-flask_thread = Thread(target=run_flask)
-flask_thread.start()
-
-# Fonction : lire les tokens fraîchement gradués
+# Lire les tokens fraîchement gradués
 def check_new_graduated_tokens():
-    file_path = "token_bonded_list.json"
+    file_path = BONDED_FILE
     if not os.path.exists(file_path):
         return []
 
@@ -186,9 +189,12 @@ def check_new_graduated_tokens():
 
     return new_tokens
 
-# Boucle principale
+# === Lancer le serveur Flask
+flask_thread = Thread(target=run_flask)
+flask_thread.start()
+
+# === Boucle principale
 while True:
-    # 🔄 Scanner les tokens fraîchement gradués détectés par bonding_tracker.py
     new_graduated = check_new_graduated_tokens()
     if new_graduated:
         print(f"[🚀] {len(new_graduated)} token(s) fraîchement gradués à scanner en priorité !")
