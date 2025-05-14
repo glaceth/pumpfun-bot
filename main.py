@@ -1,24 +1,12 @@
 import os
 import json
-import requests
 import time
+import requests
+from datetime import datetime
 from flask import Flask
 from threading import Thread
 
-# Flask setup
-app = Flask(__name__)
-
-@app.route('/')
-def home():
-    return "Pump.fun ULTIMATE bot is running."
-
-def run_flask():
-    app.run(host='0.0.0.0', port=8080)
-
-flask_thread = Thread(target=run_flask)
-flask_thread.start()
-
-# Lire clés depuis Render
+# === Config & Secrets depuis Render ===
 with open("/etc/secrets/MORALIS_API") as f:
     API_KEY = f.read().strip()
 
@@ -28,89 +16,120 @@ with open("/etc/secrets/TELEGRAM_TOKEN") as f:
 with open("/etc/secrets/CHAT_ID") as f:
     CHAT_ID = f.read().strip()
 
-# Fichier mémoire
+# === Fichiers ===
 MEMORY_FILE = "token_memory_ultimate.json"
+BONDED_FILE = "token_bonded_list.json"
+LOG_FILE = "token_daily_log.json"
 
-def load_memory():
-    if os.path.exists(MEMORY_FILE):
-        with open(MEMORY_FILE, "r") as f:
-            return json.load(f)
-    return {}
+# === Initialisation mémoire ===
+if not os.path.exists(MEMORY_FILE):
+    with open(MEMORY_FILE, "w") as f:
+        json.dump({}, f)
 
-def save_memory(memory):
+if not os.path.exists(LOG_FILE):
+    with open(LOG_FILE, "w") as f:
+        json.dump({"scanned": [], "alerted": [], "near_threshold": []}, f)
+
+# === Flask ===
+app = Flask(__name__)
+
+@app.route("/")
+def index():
+    return "Bot actif"
+
+def run_flask():
+    app.run(host='0.0.0.0', port=8080)
+
+# === Telegram ===
+def send_telegram_message(text):
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    payload = {"chat_id": CHAT_ID, "text": text}
+    try:
+        requests.post(url, json=payload)
+    except Exception as e:
+        print(f"Erreur Telegram : {e}")
+
+# === Récupérer les tokens gradués ===
+def fetch_graduated_tokens():
+    url = "https://solana-gateway.moralis.io/token/mainnet/exchange/pumpfun/graduated?limit=100"
+    headers = {"X-API-Key": API_KEY, "Accept": "application/json"}
+    try:
+        response = requests.get(url, headers=headers)
+        return response.json().get("result", [])
+    except Exception as e:
+        print("Erreur API graduated:", e)
+        return []
+
+# === Analyse de tokens ===
+def check_tokens():
+    tokens = fetch_graduated_tokens()
+    now = datetime.utcnow()
+
+    with open(MEMORY_FILE, "r") as f:
+        memory = json.load(f)
+
+    with open(LOG_FILE, "r") as f:
+        daily_log = json.load(f)
+
+    for token in tokens:
+        address = token.get("tokenAddress")
+        if not address or address in memory:
+            continue
+
+        market_cap = float(token.get("fullyDilutedValuation", 0))
+        liquidity = float(token.get("liquidity", 0))
+        mentions = token.get("mentions", 0)
+        volume = float(token.get("volume", 0))
+        holders = int(token.get("holders", 0))
+        rugscore = token.get("rugscore", 0)
+        created_at = token.get("createdAt", now.isoformat())
+
+        try:
+            pair_age = (now - datetime.fromisoformat(created_at.replace("Z", ""))).total_seconds() / 3600
+        except:
+            pair_age = 0
+
+        # === Filtres ===
+        if market_cap < 60000 or liquidity < 5000 or mentions < 25 or rugscore < 70:
+            print(f"⛔ Token filtré : {token.get('name', 'N/A')} "
+                  f"(MC={market_cap}, LQ={liquidity}, Vol={volume}, Holders={holders}, "
+                  f"Rugscore={rugscore}, Mentions={mentions}, Age={round(pair_age, 2)}h)")
+            memory[address] = True
+            continue
+
+        # === Envoi Telegram ===
+        msg = f"🔥 {token.get('name')} détecté !\nMC: {market_cap}$\nLQ: {liquidity}$\nMentions: {mentions}"
+        send_telegram_message(msg)
+        print(f"✅ {token.get('name')} envoyé sur Telegram !")
+
+        # === Mémorisation ===
+        memory[address] = True
+        daily_log["scanned"].append(address)
+        daily_log["alerted"].append(address)
+
+    # === Sauvegarde mémoire ===
     with open(MEMORY_FILE, "w") as f:
         json.dump(memory, f)
 
-def send_telegram(message):
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    data = {"chat_id": CHAT_ID, "text": message}
-    try:
-        r = requests.post(url, json=data)
-        if r.status_code != 200:
-            print("❌ Erreur envoi Telegram :", r.text)
-    except Exception as e:
-        print("❌ Exception Telegram :", e)
+    with open(LOG_FILE, "w") as f:
+        json.dump(daily_log, f)
 
-def fetch_graduated_tokens():
-    url = "https://solana-gateway.moralis.io/token/mainnet/exchange/pumpfun/graduated?limit=100"
-    headers = {
-        "accept": "application/json",
-        "X-API-Key": API_KEY
-    }
-    try:
-        r = requests.get(url, headers=headers)
-        if r.status_code == 200:
-            return r.json()["result"]
-        else:
-            print("❌ Erreur API Moralis :", r.text)
-            return []
-    except Exception as e:
-        print("❌ Exception API Moralis :", e)
-        return []
+# === Tâche journalière ===
+def send_daily_log():
+    with open(LOG_FILE, "r") as f:
+        log = json.load(f)
+    scanned = len(log["scanned"])
+    alerted = len(log["alerted"])
+    msg = f"📊 Résumé du jour :\nScannés : {scanned}\nAlertés : {alerted}"
+    send_telegram_message(msg)
 
-def is_promising(token):
-    try:
-        liquidity = float(token.get("liquidity", 0))
-        marketcap = float(token.get("fullyDilutedValuation", 0))
-        name = token.get("name") or "Unnamed"
+# === Lancer le bot ===
+flask_thread = Thread(target=run_flask)
+flask_thread.start()
 
-        if marketcap < 60000 and liquidity > 30000:
-            print(f"✅ {name} passe les filtres (MC={marketcap}, LQ={liquidity})")
-            return True
-        else:
-            print(f"⛔️ {name} filtré (MC={marketcap}, LQ={liquidity})")
-            return False
-    except Exception as e:
-        print("Erreur filtre :", e)
-        return False
-
-def main_loop():
-    memory = load_memory()
-
-    while True:
-        tokens = fetch_graduated_tokens()
-        new_detected = []
-
-        for token in tokens:
-            addr = token["tokenAddress"]
-            if addr not in memory and is_promising(token):
-                message = f"""
-🚀 Nouveau token prometteur détecté :
-
-Name: {token.get('name')}
-Liquidity: {token.get('liquidity')}
-Market Cap: {token.get('fullyDilutedValuation')}
-Price (USD): {token.get('priceUsd')}
-"""
-                send_telegram(message)
-                memory[addr] = True
-                new_detected.append(token.get("name"))
-
-        if new_detected:
-            print(f"📦 {len(new_detected)} tokens envoyés sur Telegram.")
-
-        save_memory(memory)
-        time.sleep(60)
-
-# Démarrer la boucle
-main_loop()
+while True:
+    now = datetime.utcnow()
+    if now.hour in [6, 20] and now.minute == 0:
+        send_daily_log()
+    check_tokens()
+    time.sleep(60)
