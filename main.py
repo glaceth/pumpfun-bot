@@ -209,6 +209,11 @@ while True:
     if now.hour in [6, 20] and now.minute == 0:
         send_daily_log()
         daily_log = {"scanned": [], "alerted": [], "near_threshold": []}
+# 🔬 Forcer un test manuel de token
+if now.minute % 5 == 0:  # toutes les 5 minutes
+    test_mint = "8FuGEUCDmnv4DNZDR9tfdVnArLxHQVW5DxHXD5pJAg91"  # exemple
+    print("[🧪 TEST] Token test manuel...")
+    get_token_details(test_mint)
 
     time.sleep(60)
 
