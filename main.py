@@ -28,7 +28,7 @@ MARKETCAP_THRESHOLD = 60000
 PROMETTEUR_THRESHOLD = 70000
 STEP_ALERT = 10000
 TOP10_ALERT_THRESHOLD = 85
-BASE_URL = "https://solana-gateway.moralis.io/token/mainnet/exchange/pumpfun"
+
 HEADERS = {
     "accept": "application/json",
     "X-API-Key": API_KEY
@@ -100,26 +100,22 @@ def save_memory(memory):
 def get_token_details(mint):
     stats = {}
     try:
-        print(f"[🌀] Récupération des détails pour {mint}...")
-        vol = requests.get(f"{BASE_URL}/volume?tokenAddress={mint}", headers=HEADERS)
-        print(f"[📊] Volume status: {vol.status_code}")
-        vol = vol.json()
+        base_url = f"https://solana-gateway.moralis.io/token/mainnet/exchange/pumpfun"
+
+        vol = requests.get(f"{base_url}/volume?tokenAddress={mint}", headers=HEADERS).json()
         stats["volume1h"] = vol.get("volume1hQuote", 0)
         stats["volume24h"] = vol.get("volume24hQuote", 0)
 
-        holders = requests.get(f"{BASE_URL}/holders?tokenAddress={mint}", headers=HEADERS)
-        print(f"[👥] Holders status: {holders.status_code}")
-        top10 = holders.json().get("topHolders", [])[:10]
+        holders = requests.get(f"{base_url}/holders?tokenAddress={mint}", headers=HEADERS).json()
+        top10 = holders.get("topHolders", [])[:10]
         stats["top10pct"] = sum(h.get("percentage", 0) for h in top10)
 
-        snipers = requests.get(f"{BASE_URL}/snipers?tokenAddress={mint}", headers=HEADERS).json()
+        snipers = requests.get(f"{base_url}/snipers?tokenAddress={mint}", headers=HEADERS).json()
         stats["sniper_count"] = len(snipers.get("result", []))
 
-        swaps = requests.get(f"{BASE_URL}/swaps?tokenAddress={mint}", headers=HEADERS).json()
+        swaps = requests.get(f"{base_url}/swaps?tokenAddress={mint}", headers=HEADERS).json()
         buy_amount = sum(tx.get("quoteAmount", 0) for tx in swaps.get("result", []) if tx.get("side") == "buy")
         stats["buy_total"] = buy_amount
-
-        print(f"[✅] Détails récupérés pour {mint}")
 
     except Exception as e:
         print(f"[{mint}] Erreur stats avancées : {e}")
@@ -128,15 +124,17 @@ def get_token_details(mint):
 
 def check_tokens():
     memory = load_memory()
-    response = requests.get(f"{BASE_URL}/graduated", headers=HEADERS, params={"limit": 100})
-    if response.status_code != 200:
-        print("Erreur API")
-        return
+    url = "https://solana-gateway.moralis.io/token/mainnet/exchange/pumpfun/graduated?limit=100"
 
-    tokens = response.json().get("result", [])
-    for token in tokens:
-        try:
-            mint = token["tokenAddress"]
+    try:
+        response = requests.get(url, headers=HEADERS)
+        if response.status_code != 200:
+            print("Erreur API graduated:", response.status_code, response.text)
+            return
+
+        tokens = response.json().get("result", [])
+        for token in tokens:
+            mint = token.get("tokenAddress")
             price = float(token.get("priceUsd") or 0)
             liquidity = float(token.get("liquidity") or 0)
             market_cap = price * liquidity
@@ -163,11 +161,12 @@ def check_tokens():
                 send_telegram_alert(token, market_cap, extra_info=extra)
                 memory[mint] = market_cap
                 daily_log["alerted"].append(f"{symbol} (${round(market_cap):,})")
-        except Exception as e:
-            print("Erreur scan token :", e)
 
-    save_memory(memory)
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] ✅ Scan terminé")
+        save_memory(memory)
+        print(f"[{datetime.now().strftime('%H:%M:%S')}] ✅ Scan terminé")
+
+    except Exception as e:
+        print("Erreur générale dans check_tokens() :", e)
 
 def check_new_graduated_tokens():
     if not os.path.exists(BONDED_FILE):
@@ -185,7 +184,7 @@ def check_new_graduated_tokens():
 
     return new_tokens
 
-# Démarrer Flask
+# Lancer le serveur Flask
 flask_thread = Thread(target=run_flask)
 flask_thread.start()
 
@@ -200,11 +199,4 @@ while True:
     if now.hour in [6, 20] and now.minute == 0:
         send_daily_log()
         daily_log = {"scanned": [], "alerted": [], "near_threshold": []}
-
-    # 🔬 Forcer un test toutes les 5 min pour Moralis
-    if now.minute % 5 == 0:
-        print("[🧪 TEST] Token test manuel...")
-        test_mint = "8FuGEUCDmnv4DNZDR9tfdVnArLxHQVW5DxHXD5pJAg91"
-        get_token_details(test_mint)
-
     time.sleep(60)
