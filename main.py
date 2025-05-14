@@ -6,8 +6,9 @@ from datetime import datetime
 from threading import Thread
 from flask import Flask
 
-# Flask keep-alive pour Render
+# === Flask keep-alive pour Render ===
 app = Flask(__name__)
+
 @app.route('/')
 def home():
     return "Pump.fun ULTIMATE bot is running."
@@ -15,198 +16,131 @@ def home():
 def run_flask():
     app.run(host='0.0.0.0', port=8080)
 
-# Lire les secrets Render
-with open("/etc/secrets/MORALIS_API") as f:
-    API_KEY = f.read().strip()
-
-with open("/etc/secrets/TELEGRAM_TOKEN") as f:
-    TELEGRAM_TOKEN = f.read().strip()
-
-with open("/etc/secrets/CHAT_ID") as f:
-    CHAT_ID = f.read().strip()
+# === Config & Env ===
+API_KEY = os.environ.get("MORALIS_API")
+TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
+CHAT_ID = os.environ.get("CHAT_ID")
 
 MEMORY_FILE = "token_memory_ultimate.json"
 LOG_FILE = "token_daily_log.json"
 BONDED_FILE = "token_bonded_list.json"
 
-MARKETCAP_THRESHOLD = 60000
-PROMETTEUR_THRESHOLD = 70000
-STEP_ALERT = 10000
-TOP10_ALERT_THRESHOLD = 85
-BASE_URL = "https://solana-gateway.moralis.io/token/mainnet/exchange/pumpfun"
-
+BASE_URL = "https://solana-gateway.moralis.io/token/mainnet/exchange/pumpfun/graduated"
 HEADERS = {
     "accept": "application/json",
     "X-API-Key": API_KEY
 }
 
-daily_log = {"scanned": [], "alerted": [], "near_threshold": []}
-
-def send_telegram_alert(token, market_cap, extra_info=""):
-    name = token.get("name") or "N/A"
-    symbol = token.get("symbol") or "N/A"
-    mint = token.get("tokenAddress")
-    price = token.get("priceUsd")
-    liquidity = token.get("liquidity")
-    link = f"https://pump.fun/{mint}"
-
-    message = (
-        f"🚨 Token Pump Alert 🚨\n"
-        f"Name: {name}\n"
-        f"Symbol: {symbol}\n"
-        f"Market Cap: ${round(market_cap):,}\n"
-        f"Price: ${price}\n"
-        f"Liquidity: {liquidity}\n"
-        f"{extra_info}\n"
-        f"🔗 {link}"
-    )
-
-    if market_cap >= PROMETTEUR_THRESHOLD:
-        message += "\n🔥 Prometteur !"
-
+# === Envoie Telegram ===
+def send_telegram(message):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     data = {
         "chat_id": CHAT_ID,
-        "text": message
+        "text": message,
+        "parse_mode": "Markdown"
     }
-    print(f"📤 Sending alert to Telegram: {symbol} | ${round(market_cap)}")
-    requests.post(url, data=data)
-
-def send_daily_log():
-    if not daily_log["scanned"]:
-        return
-
-    message = f"📊 Pump.fun Summary – {datetime.now().strftime('%d %b %Y %H:%M')}\n"
-    message += f"Tokens scanned: {len(daily_log['scanned'])}\n"
-    message += f"Alerts sent: {len(daily_log['alerted'])}\n"
-
-    if daily_log['alerted']:
-        message += "\n🟢 Alerted tokens:\n" + "\n".join(daily_log['alerted'])
-
-    if daily_log['near_threshold']:
-        message += "\n⚪ Near threshold (50k–59k):\n" + "\n".join(daily_log['near_threshold'])
-
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    data = {
-        "chat_id": CHAT_ID,
-        "text": message
-    }
-    requests.post(url, data=data)
-
-def load_memory():
     try:
+        requests.post(url, json=data)
+    except Exception as e:
+        print("❌ Erreur Telegram:", e)
+
+# === Mémoire locale ===
+def load_memory():
+    if os.path.exists(MEMORY_FILE):
         with open(MEMORY_FILE, "r") as f:
             return json.load(f)
-    except:
-        return {}
+    return {}
 
 def save_memory(memory):
     with open(MEMORY_FILE, "w") as f:
-        json.dump(memory, f)
+        json.dump(memory, f, indent=2)
 
-def get_token_details(mint):
-    stats = {}
-    try:
-        vol = requests.get(f"{BASE_URL}/volume?tokenAddress={mint}", headers=HEADERS).json()
-        stats["volume1h"] = vol.get("volume1hQuote", 0)
-        stats["volume24h"] = vol.get("volume24hQuote", 0)
-
-        holders = requests.get(f"{BASE_URL}/holders?tokenAddress={mint}", headers=HEADERS).json()
-        top10 = holders.get("topHolders", [])[:10]
-        stats["top10pct"] = sum(h.get("percentage", 0) for h in top10)
-
-        snipers = requests.get(f"{BASE_URL}/snipers?tokenAddress={mint}", headers=HEADERS).json()
-        stats["sniper_count"] = len(snipers.get("result", []))
-
-        swaps = requests.get(f"{BASE_URL}/swaps?tokenAddress={mint}", headers=HEADERS).json()
-        buy_amount = sum(tx.get("quoteAmount", 0) for tx in swaps.get("result", []) if tx.get("side") == "buy")
-        stats["buy_total"] = buy_amount
-
-    except Exception as e:
-        print(f"[{mint}] Erreur stats avancées : {e}")
-
-    return stats
-
-def check_tokens():
-    print("🔍 check_tokens() triggered")
-    memory = load_memory()
-    try:
-        response = requests.get(f"{BASE_URL}/graduated", headers=HEADERS, params={"limit": 100})
-        print("✅ API Moralis responded with status:", response.status_code)
-        if response.status_code != 200:
-            return
-        tokens = response.json().get("result", [])
-        print(f"📦 {len(tokens)} graduated tokens fetched")
-    except Exception as e:
-        print("❌ Erreur API graduated:", e)
-        return
-
-    for token in tokens:
-        try:
-            mint = token["tokenAddress"]
-            price = float(token.get("priceUsd") or 0)
-            liquidity = float(token.get("liquidity") or 0)
-            market_cap = price * liquidity
-            symbol = token.get("symbol", mint[:4])
-
-            daily_log["scanned"].append(symbol)
-
-            if 50000 <= market_cap < MARKETCAP_THRESHOLD:
-                daily_log["near_threshold"].append(f"{symbol} (${round(market_cap):,})")
-
-            if market_cap < MARKETCAP_THRESHOLD:
-                continue
-
-            print(f"💡 Token {symbol} passed marketcap filter: ${round(market_cap)}")
-
-            prev = memory.get(mint, 0)
-            if mint not in memory or (market_cap - prev) >= STEP_ALERT:
-                stats = get_token_details(mint)
-                extra = (
-                    f"👥 Top 10 Holders: {round(stats['top10pct'], 1)}%" +
-                    (" ⚠️ Trop centralisé !" if stats['top10pct'] > TOP10_ALERT_THRESHOLD else "") +
-                    f"\n📊 Volume: 1h ${int(stats['volume1h'])} | 24h ${int(stats['volume24h'])}" +
-                    f"\n🐳 Whale buys: ${int(stats['buy_total'])}" +
-                    f"\n🧠 Snipers: {stats['sniper_count']}"
-                )
-                send_telegram_alert(token, market_cap, extra_info=extra)
-                memory[mint] = market_cap
-                daily_log["alerted"].append(f"{symbol} (${round(market_cap):,})")
-        except Exception as e:
-            print("Erreur scan token :", e)
-
-    save_memory(memory)
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] ✅ Scan terminé")
-
+# === Chargement des tokens déjà alertés ===
 def check_new_graduated_tokens():
-    if not os.path.exists(BONDED_FILE):
+    file_path = BONDED_FILE
+    if not os.path.exists(file_path):
         return []
-
     try:
-        with open(BONDED_FILE, "r") as f:
+        with open(file_path, "r") as f:
             memory = json.load(f)
     except:
         return []
-
     new_tokens = list(memory.keys())
-    with open(BONDED_FILE, "w") as f:
+    with open(file_path, "w") as f:
         json.dump({}, f)
-
     return new_tokens
 
-# Lancer le serveur Flask
-flask_thread = Thread(target=run_flask)
-flask_thread.start()
+# === Log quotidien ===
+def send_daily_log():
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    msg = f"📋 *Daily Log {now}*\nAucun token détecté aujourd'hui."
+    send_telegram(msg)
 
-# Boucle principale
-while True:
-    new_graduated = check_new_graduated_tokens()
-    if new_graduated:
-        print(f"[🚀] {len(new_graduated)} token(s) fraîchement gradués à scanner en priorité !")
+# === Scan des tokens ===
+def check_tokens():
+    try:
+        response = requests.get(BASE_URL, headers=HEADERS)
+        data = response.json()
 
-    check_tokens()
-    now = datetime.now()
-    if now.hour in [6, 20] and now.minute == 0:
-        send_daily_log()
-        daily_log = {"scanned": [], "alerted": [], "near_threshold": []}
-    time.sleep(60)
+        if "result" not in data:
+            print("❌ Erreur API: pas de 'result'")
+            return
+
+        memory = load_memory()
+        new_alerts = 0
+
+        for token in data["result"]:
+            token_address = token.get("tokenAddress")
+            if token_address in memory:
+                continue
+
+            name = token.get("name") or "Unknown"
+            symbol = token.get("symbol") or ""
+            liquidity = float(token.get("liquidity") or 0)
+            market_cap = float(token.get("fullyDilutedValuation") or 0)
+            bonding_curve_progress = float(token.get("bondingCurveProgress") or 0)
+
+            # Log technique pour suivi
+            print(f"🔍 {name} | MC: {market_cap} | LQ: {liquidity} | Curve: {bonding_curve_progress:.2f}%")
+
+            # Filtres plus permissifs
+            if liquidity > 10000 and market_cap > 20000 and bonding_curve_progress >= 92:
+                msg = (
+                    f"🚀 *{name}* ({symbol})\n"
+                    f"💧 Liquidity: {int(liquidity)}\n"
+                    f"📈 Market Cap: {int(market_cap)}\n"
+                    f"📊 Curve Progress: {bonding_curve_progress:.2f}%\n"
+                    f"🔗 Explorer: https://pump.fun/{token_address}"
+                )
+                send_telegram(msg)
+                memory[token_address] = True
+                new_alerts += 1
+
+        if new_alerts > 0:
+            print(f"✅ {new_alerts} token(s) envoyés sur Telegram.")
+        save_memory(memory)
+
+    except Exception as e:
+        print("❌ Erreur dans check_tokens():", e)
+
+# === Lancement principal ===
+if __name__ == "__main__":
+    flask_thread = Thread(target=run_flask)
+    flask_thread.start()
+
+    while True:
+        try:
+            new_graduated = check_new_graduated_tokens()
+            if new_graduated:
+                print(f"🧪 {len(new_graduated)} tokens récemment gradués à vérifier en priorité.")
+            check_tokens()
+
+            # Envoi log à 6h du matin
+            now = datetime.now()
+            if now.hour == 6 and now.minute == 0:
+                send_daily_log()
+
+        except Exception as e:
+            print("❌ Erreur boucle principale:", e)
+
+        time.sleep(60)
