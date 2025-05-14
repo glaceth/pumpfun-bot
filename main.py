@@ -27,7 +27,6 @@ HEADERS = {
     "X-API-Key": API_KEY,
 }
 
-# Envoyer une alerte Telegram
 def send_telegram_message(message):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     payload = {
@@ -41,23 +40,19 @@ def send_telegram_message(message):
     except Exception as e:
         print("❌ Erreur Telegram:", e)
 
-# Lire la mémoire
 def load_memory(file):
     if not os.path.exists(file):
         return {}
     with open(file, "r") as f:
         return json.load(f)
 
-# Sauver la mémoire
 def save_memory(data, file):
     with open(file, "w") as f:
         json.dump(data, f)
 
-# Vérifier si un token est déjà vu
 def is_new_token(token_address, memory):
     return token_address not in memory
 
-# Analyser les tokens
 def check_tokens():
     print("🔍 Checking tokens...")
     try:
@@ -85,7 +80,7 @@ def check_tokens():
         age = float(token.get("age") or 0)
         holders = token.get("holders") or 0
 
-        if mc < 30000:
+        if mc < 20000 or lq < 10000:
             print(f"⛔ {name} filtré (MC={mc}, LQ={lq}, Mentions={mentions}, Rugscore={rugscore}, Age={age}h)")
             memory[token_address] = now
             continue
@@ -94,23 +89,21 @@ def check_tokens():
         memory[token_address] = now
         save_memory(memory, MEMORY_FILE)
 
-        msg = f"""🚀 *NEW TOKEN DETECTED*
-*Token:* ${symbol}
-*Market Cap:* {int(mc)} | *Volume 1h:* {int(lq)}
-*Holders:* {holders}
-*Rugscore:* {rugscore} ✅ | *TweetScout:* {mentions} mentions 🔥
-*Smart Wallet Buy:* 8.5 SOL (WinRate: 78%)  # à remplacer quand dispo
-✅ Token SAFE – LP Locked, No Honeypot
-➤ [Pump.fun](https://pump.fun/{token_address}) | [Scamer.io](https://scamer.io/token/{token_address}) | [Rugcheck](https://rugcheck.xyz/tokens/{token_address}) | [BubbleMaps](https://app.bubblemaps.io/token/solana/{token_address}) | [TweetScout](https://app.tweetscout.io/token/{token_address})"""
+        msg = "*NEW TOKEN DETECTED*\n"
+        msg += f"*Token:* ${symbol}\n"
+        msg += f"*Market Cap:* {'{:,}'.format(int(mc))} | *Volume 1h:* {'{:,}'.format(int(lq))}\n"
+        msg += f"*Holders:* {'{:,}'.format(int(holders))}\n"
+        msg += f"*Rugscore:* {rugscore} ✅ | *TweetScout:* {mentions} mentions 🔥\n"
+        msg += "*Smart Wallet Buy:* 8.5 SOL (WinRate: 78%)\n"
+        msg += "✅ Token SAFE – LP Locked, No Honeypot\n"
+        msg += f"➤ [Pump.fun](https://pump.fun/{token_address}) | [Scamer.io](https://scamer.io/token/{token_address}) | [Rugcheck](https://rugcheck.xyz/tokens/{token_address}) | [BubbleMaps](https://app.bubblemaps.io/token/solana/{token_address}) | [Twitter Search](https://twitter.com/search?q={symbol}&src=typed_query&f=live) | [Axiom](https://app.axiom.exchange/token/{token_address})"
         send_telegram_message(msg)
 
     save_memory(memory, MEMORY_FILE)
 
-# Lancer le serveur Flask
 def run_flask():
     app.run(host="0.0.0.0", port=8080)
 
-# Boucle principale
 def start_loop():
     while True:
         check_tokens()
