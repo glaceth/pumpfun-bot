@@ -9,7 +9,6 @@ from threading import Thread
 
 app = Flask(__name__)
 
-# Lire les secrets depuis Render
 with open("/etc/secrets/MORALIS_API") as f:
     API_KEY = f.read().strip()
 with open("/etc/secrets/TELEGRAM_TOKEN") as f:
@@ -17,7 +16,6 @@ with open("/etc/secrets/TELEGRAM_TOKEN") as f:
 with open("/etc/secrets/CHAT_ID") as f:
     CHAT_ID = f.read().strip()
 
-# Constantes et fichiers
 MEMORY_FILE = "token_memory_ultimate.json"
 BONDED_FILE = "token_bonded_list.json"
 API_URL = "https://solana-gateway.moralis.io/token/mainnet/exchange/pumpfun/graduated?limit=100"
@@ -27,8 +25,6 @@ HEADERS = {
     "X-API-Key": API_KEY,
 }
 
-
-
 def get_rugcheck_data(token_address):
     try:
         url = f"https://api.rugcheck.xyz/tokens/{token_address}"
@@ -37,19 +33,11 @@ def get_rugcheck_data(token_address):
         score = data.get("score", 0)
         honeypot = data.get("honeypot", False)
         lp_locked = data.get("liquidityLocked", True)
+        print(f"🔍 Rugcheck for {token_address} → Score: {score}, Honeypot: {honeypot}, LP Locked: {lp_locked}")
         return score, honeypot, lp_locked
     except Exception as e:
         print(f"❌ Rugcheck failed for {token_address}: {e}")
         return 0, False, True
-
-    try:
-        url = f"https://api.rugcheck.xyz/tokens/{token_address}"
-        response = requests.get(url)
-        data = response.json()
-        return data.get("score", 0)
-    except Exception as e:
-        print(f"❌ Rugcheck failed for {token_address}: {e}")
-        return 0
 
 def send_telegram_message(message):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
@@ -100,20 +88,21 @@ def check_tokens():
         mc = float(token.get("fullyDilutedValuation") or 0)
         lq = float(token.get("liquidity") or 0)
         mentions = token.get("mentions") or 0
+        age = float(token.get("age") or 0)
+        holders = token.get("holders") or 0
+
+        if mc < 20000 or lq < 10000:
+            print(f"⛔ {name} filtré (MC={mc}, LQ={lq}, Mentions={mentions}, Age={age}h)")
+            memory[token_address] = now
+            continue
+
         rugscore, honeypot, lp_locked = get_rugcheck_data(token_address)
         if honeypot:
             print(f"❌ {name} bloqué (honeypot détecté)")
             memory[token_address] = now
             continue
-        age = float(token.get("age") or 0)
-        holders = token.get("holders") or 0
 
-        if mc < 20000 or lq < 10000:
-            print(f"⛔ {name} filtré (MC={mc}, LQ={lq}, Mentions={mentions}, Rugscore={rugscore}, Age={age}h)")
-            memory[token_address] = now
-            continue
-
-        print(f"✅ {name} PASSE ! MC={mc} LQ={lq} Holders={holders} Mentions={mentions} Rugscore={rugscore} Age={age}")
+        print(f"✅ {name} PASSE ! MC={mc} LQ={lq} Holders={holders} Rugscore={rugscore} LP Locked={lp_locked}")
         memory[token_address] = now
         save_memory(memory, MEMORY_FILE)
 
@@ -121,10 +110,16 @@ def check_tokens():
         msg += f"*Token:* ${symbol}\n"
         msg += f"*Market Cap:* {'{:,}'.format(int(mc))} | *Volume 1h:* {'{:,}'.format(int(lq))}\n"
         msg += f"*Holders:* {'{:,}'.format(int(holders))}\n"
-        msg += f"*Rugscore:* {rugscore} ✅ | ⚠️ LP Not Locked |  *TweetScout:* {mentions} mentions 🔥\n"
+        msg += f"*Rugscore:* {rugscore} ✅"
+        if not lp_locked:
+            msg += " | ⚠️ LP Not Locked"
+        msg += f" | *TweetScout:* {mentions} mentions 🔥\n"
         msg += "*Smart Wallet Buy:* 8.5 SOL (WinRate: 78%)\n"
-        msg += "✅ Token SAFE – LP Locked, No Honeypot\n"
-        msg += f"➤ [Pump.fun](https://pump.fun/{token_address}) | [Scamer.io](https://ai.scamr.xyz/token/{token_address}) | [Rugcheck](https://rugcheck.xyz/tokens/{token_address}) | [BubbleMaps](https://app.bubblemaps.io/token/solana/{token_address}) | [Twitter Search](https://twitter.com/search?q={symbol}&src=typed_query&f=live) | [Axiom](https://axiom.trade/meme/{token_address})"
+
+        if lp_locked:
+            msg += "✅ Token SAFE – LP Locked, No Honeypot\n"
+
+        msg += f"➤ [Pump.fun](https://pump.fun/{token_address}) | [Scamr](https://ai.scamr.xyz/token/{token_address}) | [Rugcheck](https://rugcheck.xyz/tokens/{token_address}) | [BubbleMaps](https://app.bubblemaps.io/token/solana/{token_address}) | [Twitter Search](https://twitter.com/search?q={symbol}&src=typed_query&f=live) | [Trade on Axiom](https://axiom.trade/@glace)"
         send_telegram_message(msg)
 
     save_memory(memory, MEMORY_FILE)
