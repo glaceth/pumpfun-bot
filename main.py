@@ -1,4 +1,3 @@
-
 import os
 import time
 import json
@@ -96,7 +95,7 @@ def check_tokens():
         msg += f"*Rugscore:* {rugscore} ✅ | *TweetScout:* {mentions} mentions 🔥\n"
         msg += "*Smart Wallet Buy:* 8.5 SOL (WinRate: 78%)\n"
         msg += "✅ Token SAFE – LP Locked, No Honeypot\n"
-        msg += f"➤ [Pump.fun](https://pump.fun/{token_address}) | [Scamer.io](https://scamer.io/token/{token_address}) | [Rugcheck](https://rugcheck.xyz/tokens/{token_address}) | [BubbleMaps](https://app.bubblemaps.io/token/solana/{token_address}) | [Twitter Search](https://twitter.com/search?q={symbol}&src=typed_query&f=live) | [Axiom](https://app.axiom.exchange/token/{token_address})"
+        msg += f"➤ [Pump.fun](https://pump.fun/{token_address}) | [Scamer.io](https://scamer.io/token/{token_address}) | [Rugcheck](https://rugcheck.xyz/tokens/{token_address}) | [BubbleMaps](https://app.bubblemaps.io/token/solana/{token_address}) | [Twitter Search](https://twitter.com/search?q={symbol}&src=typed_query&f=live) | [Axiom](https://axiom.trade/meme/{token_address})"
         send_telegram_message(msg)
 
     save_memory(memory, MEMORY_FILE)
