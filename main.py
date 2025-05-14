@@ -5,9 +5,8 @@ import os
 from datetime import datetime
 from threading import Thread
 from flask import Flask
-import subprocess
 
-# === Flask keep-alive ===
+# Flask keep-alive pour Render
 app = Flask(__name__)
 @app.route('/')
 def home():
@@ -16,31 +15,31 @@ def home():
 def run_flask():
     app.run(host='0.0.0.0', port=8080)
 
-# === Lancer bonding_tracker.py automatiquement ===
-subprocess.Popen(["python", "bonding_tracker.py"])
-
-# === CONFIGURATION ===
-API_KEY = os.environ.get("MORALIS_API_KEY")
+# Configuration & secrets
+API_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."  # remplace si nécessaire
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
-CHAT_ID = os.environ.get("CHAT_ID")
-
+CHAT_ID = "7604145219"
 MEMORY_FILE = "token_memory_ultimate.json"
 LOG_FILE = "token_daily_log.json"
 BONDED_FILE = "token_bonded_list.json"
 
+# Seuils
 MARKETCAP_THRESHOLD = 60000
 PROMETTEUR_THRESHOLD = 70000
 STEP_ALERT = 10000
 TOP10_ALERT_THRESHOLD = 85
 
+# Moralis API
 BASE_URL = "https://solana-gateway.moralis.io/token/mainnet/exchange/pumpfun"
 HEADERS = {
     "accept": "application/json",
     "X-API-Key": API_KEY
 }
 
+# Journal du jour
 daily_log = {"scanned": [], "alerted": [], "near_threshold": []}
 
+# Alertes Telegram
 def send_telegram_alert(token, market_cap, extra_info=""):
     name = token.get("name") or "N/A"
     symbol = token.get("symbol") or "N/A"
@@ -70,6 +69,7 @@ def send_telegram_alert(token, market_cap, extra_info=""):
     }
     requests.post(url, data=data)
 
+# Récapitulatif journalier
 def send_daily_log():
     if not daily_log["scanned"]:
         return
@@ -91,6 +91,7 @@ def send_daily_log():
     }
     requests.post(url, data=data)
 
+# Charger la mémoire
 def load_memory():
     try:
         with open(MEMORY_FILE, "r") as f:
@@ -102,6 +103,7 @@ def save_memory(memory):
     with open(MEMORY_FILE, "w") as f:
         json.dump(memory, f)
 
+# Détails du token
 def get_token_details(mint):
     stats = {}
     try:
@@ -128,6 +130,7 @@ def get_token_details(mint):
 
     return stats
 
+# Scan complet
 def check_tokens():
     memory = load_memory()
     response = requests.get(f"{BASE_URL}/graduated", headers=HEADERS, params={"limit": 100})
@@ -171,37 +174,39 @@ def check_tokens():
     save_memory(memory)
     print(f"[{datetime.now().strftime('%H:%M:%S')}] ✅ Scan terminé")
 
-# Lire les tokens fraîchement gradués
+# Tokens fraîchement gradués détectés par bonding_tracker
 def check_new_graduated_tokens():
-    file_path = BONDED_FILE
-    if not os.path.exists(file_path):
+    if not os.path.exists(BONDED_FILE):
         return []
 
     try:
-        with open(file_path, "r") as f:
+        with open(BONDED_FILE, "r") as f:
             memory = json.load(f)
     except:
         return []
 
     new_tokens = list(memory.keys())
-    with open(file_path, "w") as f:
+    with open(BONDED_FILE, "w") as f:
         json.dump({}, f)
 
     return new_tokens
 
-# === Lancer le serveur Flask
+# === Lancement et boucle principale ===
 flask_thread = Thread(target=run_flask)
 flask_thread.start()
 
-# === Boucle principale
 while True:
+    # 🔄 Scanner les tokens fraîchement gradués détectés par bonding_tracker.py
     new_graduated = check_new_graduated_tokens()
     if new_graduated:
         print(f"[🚀] {len(new_graduated)} token(s) fraîchement gradués à scanner en priorité !")
 
     check_tokens()
+
     now = datetime.now()
     if now.hour in [6, 20] and now.minute == 0:
         send_daily_log()
         daily_log = {"scanned": [], "alerted": [], "near_threshold": []}
+
     time.sleep(60)
+
