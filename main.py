@@ -27,6 +27,17 @@ HEADERS = {
     "X-API-Key": API_KEY,
 }
 
+
+def get_rugscore(token_address):
+    try:
+        url = f"https://api.rugcheck.xyz/tokens/{token_address}"
+        response = requests.get(url)
+        data = response.json()
+        return data.get("score", 0)
+    except Exception as e:
+        print(f"❌ Rugcheck failed for {token_address}: {e}")
+        return 0
+
 def send_telegram_message(message):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     payload = {
@@ -76,7 +87,7 @@ def check_tokens():
         mc = float(token.get("fullyDilutedValuation") or 0)
         lq = float(token.get("liquidity") or 0)
         mentions = token.get("mentions") or 0
-        rugscore = token.get("rugscore") or 0
+        rugscore = get_rugscore(token_address)
         age = float(token.get("age") or 0)
         holders = token.get("holders") or 0
 
@@ -96,7 +107,7 @@ def check_tokens():
         msg += f"*Rugscore:* {rugscore} ✅ | *TweetScout:* {mentions} mentions 🔥\n"
         msg += "*Smart Wallet Buy:* 8.5 SOL (WinRate: 78%)\n"
         msg += "✅ Token SAFE – LP Locked, No Honeypot\n"
-        msg += f"➤ [Pump.fun](https://pump.fun/{token_address}) | [Scamer.io](https://ai.scamr.xyz/token/{token_address}) | [Rugcheck](https://rugcheck.xyz/tokens/{token_address}) | [BubbleMaps](https://app.bubblemaps.io/token/solana/{token_address}) | [Twitter Search](https://twitter.com/search?q={symbol}&src=typed_query&f=live) | [Axiom](https://axiom.trade/meme/{token_address})\n*Note: may not be live on Axiom yet*\n\n*Paste this in Axiom:* `{token_address}`"
+        msg += f"➤ [Pump.fun](https://pump.fun/{token_address}) | [Scamer.io](https://ai.scamr.xyz/token/{token_address}) | [Rugcheck](https://rugcheck.xyz/tokens/{token_address}) | [BubbleMaps](https://app.bubblemaps.io/token/solana/{token_address}) | [Twitter Search](https://twitter.com/search?q={symbol}&src=typed_query&f=live) | [Axiom](https://axiom.trade/meme/{token_address})"
         send_telegram_message(msg)
 
     save_memory(memory, MEMORY_FILE)
