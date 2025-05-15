@@ -1,4 +1,3 @@
-
 import os
 import time
 import json
@@ -26,12 +25,13 @@ HEADERS = {
 
 def get_rugcheck_data(token_address):
     try:
-        url = f"https://api.rugcheck.xyz/tokens/{token_address}"
+        url = f"https://api.rugcheck.xyz/v1/tokens/{token_address}/report/summary"
         response = requests.get(url)
         data = response.json()
-        score = data["score"]
-        honeypot = data["honeypot"]
-        lp_locked = data["liquidityLocked"]
+        score = data.get("score_normalised")
+        risks = data.get("risks", [])
+        honeypot = any("honeypot" in r["name"].lower() for r in risks)
+        lp_locked = all("liquidity" not in r["name"].lower() or "not" not in r["description"].lower() for r in risks)
         print(f"🔍 Rugcheck {token_address} → Score: {score}, Honeypot: {honeypot}, LP Locked: {lp_locked}")
         return score, honeypot, lp_locked
     except Exception as e:
@@ -106,7 +106,7 @@ def check_tokens():
         if rugscore is not None:
             msg += f"*Rugscore:* {rugscore} ✅\n"
 
-        if lp_locked is True and honeypot is False:
+        if lp_locked and not honeypot:
             msg += "✅ Token SAFE – LP Locked, No Honeypot\n"
 
         msg += f"➤ [Pump.fun](https://pump.fun/{token_address}) | [Scamr](https://ai.scamr.xyz/token/{token_address}) | [Rugcheck](https://rugcheck.xyz/tokens/{token_address}) | [BubbleMaps](https://app.bubblemaps.io/sol/token/{token_address}) | [Twitter Search](https://twitter.com/search?q={symbol}&src=typed_query&f=live) | [Trade on Axiom](https://axiom.trade/@glace)\n"
