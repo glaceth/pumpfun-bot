@@ -65,7 +65,6 @@ def get_smart_wallet_buy(token_address, current_mc, wallet_stats):
                     if amt > 5 * 10**9:
                         wallet = transfer.get("fromUserAccount", "unknown")
                         amount_sol = round(amt / 10**9, 2)
-                        # Stocker dans wallet_stats
                         if wallet not in wallet_stats:
                             wallet_stats[wallet] = {"buys": []}
                         wallet_stats[wallet]["buys"].append({"token": token_address, "mc_entry": current_mc, "mc_now": current_mc})
@@ -109,7 +108,7 @@ def send_marketcap_gain_alert(token_address, data):
     initial = data["initial"]
     current = data["current"]
     gain = current - initial
-    for threshold in [50000, 100000, 200000, 500000]:
+    for threshold in [50_000, 100_000, 200_000, 500_000]:
         if threshold not in data["alerts"] and gain >= threshold:
             msg = f"📈 Token ${symbol} is up by +${threshold:,} since first detection!\nInitial: ${initial:,} → Now: ${current:,}"
             send_telegram_message(msg)
