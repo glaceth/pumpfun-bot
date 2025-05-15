@@ -18,6 +18,7 @@ with open("/etc/secrets/CHAT_ID") as f:
 MEMORY_FILE = "token_memory_ultimate.json"
 TRACKING_FILE = "token_tracking.json"
 API_URL = "https://solana-gateway.moralis.io/token/mainnet/exchange/pumpfun/graduated?limit=100"
+HELIUS_API_KEY = "1300eb61-2fbd-4ec4-bdbf-22b34e1c8708"
 
 HEADERS = {
     "Accept": "application/json",
@@ -37,6 +38,24 @@ def get_rugcheck_data(token_address):
         return score, honeypot, lp_locked, holders
     except Exception as e:
         return None, None, None, 0
+
+def get_smart_wallet_buy(token_address):
+    try:
+        base_token = token_address.replace("pump", "")
+        url = f"https://api.helius.xyz/v0/addresses/{base_token}/transactions?api-key={HELIUS_API_KEY}"
+        response = requests.get(url)
+        if response.status_code != 200:
+            return None
+        transactions = response.json()
+        for tx in transactions:
+            if "tokenTransfers" in tx:
+                for transfer in tx["tokenTransfers"]:
+                    if transfer.get("amount", 0) > 5 * 10**9:
+                        amount_sol = round(transfer["amount"] / 10**9, 2)
+                        return amount_sol
+    except:
+        pass
+    return None
 
 def send_telegram_message(message):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
@@ -127,6 +146,8 @@ def check_tokens():
             memory[token_address] = now
             continue
 
+        smart_buy = get_smart_wallet_buy(token_address)
+
         memory[token_address] = now
         tracking[token_address] = {"symbol": symbol, "initial": mc, "current": mc, "alerts": []}
         save_json(tracking, TRACKING_FILE)
@@ -139,6 +160,8 @@ def check_tokens():
             msg += f"*Rugscore:* {rugscore} ✅\n"
         if lp_locked and not honeypot:
             msg += "✅ Token SAFE – LP Locked, No Honeypot\n"
+        if smart_buy:
+            msg += f"🐳 Smart Wallet Buy: {smart_buy} SOL\n"
         msg += f"➤ [Pump.fun](https://pump.fun/{token_address}) | [Scamr](https://ai.scamr.xyz/token/{token_address}) | [Rugcheck](https://rugcheck.xyz/tokens/{token_address}) | [BubbleMaps](https://app.bubblemaps.io/sol/token/{token_address}) | [Twitter Search](https://twitter.com/search?q={symbol}&src=typed_query&f=live) | [Trade on Axiom](https://axiom.trade/@glace)\n"
         msg += f"*Token adresse:* `{token_address}`"
         send_telegram_message(msg)
