@@ -17,6 +17,7 @@ with open("/etc/secrets/CHAT_ID") as f:
 
 MEMORY_FILE = "token_memory_ultimate.json"
 TRACKING_FILE = "token_tracking.json"
+WALLET_STATS_FILE = "wallet_stats.json"
 API_URL = "https://solana-gateway.moralis.io/token/mainnet/exchange/pumpfun/graduated?limit=100"
 HELIUS_API_KEY = "1300eb61-2fbd-4ec4-bdbf-22b34e1c8708"
 
@@ -39,33 +40,6 @@ def get_rugcheck_data(token_address):
     except Exception as e:
         return None, None, None, 0
 
-def get_smart_wallet_buy(token_address):
-    try:
-        base_token = token_address.replace("pump", "")
-        url = f"https://api.helius.xyz/v0/addresses/{base_token}/transactions?api-key={HELIUS_API_KEY}"
-        response = requests.get(url)
-        if response.status_code != 200:
-            return None
-        transactions = response.json()
-        for tx in transactions:
-            if "tokenTransfers" in tx:
-                for transfer in tx["tokenTransfers"]:
-                    if transfer.get("amount", 0) > 5 * 10**9:
-                        amount_sol = round(transfer["amount"] / 10**9, 2)
-                        return amount_sol
-    except:
-        pass
-    return None
-
-def send_telegram_message(message):
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    payload = {"chat_id": CHAT_ID, "text": message, "parse_mode": "Markdown"}
-    try:
-        requests.post(url, json=payload)
-        time.sleep(2)
-    except Exception as e:
-        print("❌ Telegram error:", e)
-
 def load_json(file):
     if not os.path.exists(file):
         return {}
@@ -75,6 +49,57 @@ def load_json(file):
 def save_json(data, file):
     with open(file, "w") as f:
         json.dump(data, f)
+
+def get_smart_wallet_buy(token_address, current_mc, wallet_stats):
+    try:
+        base_token = token_address.replace("pump", "")
+        url = f"https://api.helius.xyz/v0/addresses/{base_token}/transactions?api-key={HELIUS_API_KEY}"
+        response = requests.get(url)
+        if response.status_code != 200:
+            return None, None, None
+        transactions = response.json()
+        for tx in transactions:
+            if "tokenTransfers" in tx:
+                for transfer in tx["tokenTransfers"]:
+                    amt = transfer.get("amount", 0)
+                    if amt > 5 * 10**9:
+                        wallet = transfer.get("fromUserAccount", "unknown")
+                        amount_sol = round(amt / 10**9, 2)
+                        # Stocker dans wallet_stats
+                        if wallet not in wallet_stats:
+                            wallet_stats[wallet] = {"buys": []}
+                        wallet_stats[wallet]["buys"].append({"token": token_address, "mc_entry": current_mc, "mc_now": current_mc})
+                        return amount_sol, wallet, wallet_stats
+    except:
+        pass
+    return None, None, wallet_stats
+
+def update_wallet_winrate(wallet_stats, tracking):
+    winrates = {}
+    for wallet, data in wallet_stats.items():
+        wins = 0
+        total = 0
+        for entry in data["buys"]:
+            token = entry["token"]
+            mc_entry = entry["mc_entry"]
+            mc_now = tracking.get(token, {}).get("current", mc_entry)
+            entry["mc_now"] = mc_now
+            total += 1
+            if mc_now >= 2 * mc_entry or mc_now >= 1_000_000:
+                wins += 1
+        if total > 0:
+            rate = int((wins / total) * 100)
+            winrates[wallet] = rate
+    return winrates
+
+def send_telegram_message(message):
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    payload = {"chat_id": CHAT_ID, "text": message, "parse_mode": "Markdown"}
+    try:
+        requests.post(url, json=payload)
+        time.sleep(2)
+    except Exception as e:
+        print("❌ Telegram error:", e)
 
 def is_new_token(token_address, memory):
     return token_address not in memory
@@ -118,6 +143,7 @@ def check_tokens():
 
     memory = load_json(MEMORY_FILE)
     tracking = load_json(TRACKING_FILE)
+    wallet_stats = load_json(WALLET_STATS_FILE)
     now = time.time()
 
     for token in data:
@@ -146,7 +172,9 @@ def check_tokens():
             memory[token_address] = now
             continue
 
-        smart_buy = get_smart_wallet_buy(token_address)
+        smart_buy, wallet, wallet_stats = get_smart_wallet_buy(token_address, mc, wallet_stats)
+        winrates = update_wallet_winrate(wallet_stats, tracking)
+        winrate = winrates.get(wallet, None) if wallet else None
 
         memory[token_address] = now
         tracking[token_address] = {"symbol": symbol, "initial": mc, "current": mc, "alerts": []}
@@ -161,13 +189,24 @@ def check_tokens():
         if lp_locked and not honeypot:
             msg += "✅ Token SAFE – LP Locked, No Honeypot\n"
         if smart_buy:
-            msg += f"🐳 Smart Wallet Buy: {smart_buy} SOL\n"
+            msg += f"🐳 Smart Wallet Buy: {smart_buy} SOL"
+            if winrate is not None:
+                msg += f" (WinRate: {winrate}%)\n"
+                if winrate >= 80:
+                    msg += "🟢 Ultra Smart\n"
+                elif winrate >= 60:
+                    msg += "🟡 Smart\n"
+                elif winrate < 30:
+                    msg += "🔴 Risky Wallet\n"
+            else:
+                msg += "\n"
         msg += f"➤ [Pump.fun](https://pump.fun/{token_address}) | [Scamr](https://ai.scamr.xyz/token/{token_address}) | [Rugcheck](https://rugcheck.xyz/tokens/{token_address}) | [BubbleMaps](https://app.bubblemaps.io/sol/token/{token_address}) | [Twitter Search](https://twitter.com/search?q={symbol}&src=typed_query&f=live) | [Trade on Axiom](https://axiom.trade/@glace)\n"
         msg += f"*Token adresse:* `{token_address}`"
         send_telegram_message(msg)
 
     save_json(memory, MEMORY_FILE)
     save_json(tracking, TRACKING_FILE)
+    save_json(wallet_stats, WALLET_STATS_FILE)
 
     now_time = datetime.now().time()
     if now_time.hour == 6 and now_time.minute == 0:
