@@ -31,11 +31,12 @@ def get_rugcheck_data(token_address):
         data = response.json()
         score = data.get("score_normalised")
         risks = data.get("risks", [])
+        holders = data.get("totalHolders", 0)
         honeypot = any("honeypot" in r["name"].lower() for r in risks)
         lp_locked = all("liquidity" not in r["name"].lower() or "not" not in r["description"].lower() for r in risks)
-        return score, honeypot, lp_locked
+        return score, honeypot, lp_locked, holders
     except Exception as e:
-        return None, None, None
+        return None, None, None, 0
 
 def send_telegram_message(message):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
@@ -109,7 +110,6 @@ def check_tokens():
         symbol = token.get("symbol", "N/A")
         mc = float(token.get("fullyDilutedValuation") or 0)
         lq = float(token.get("liquidity") or 0)
-        holders = token.get("holders", 0)
 
         if token_address in tracking:
             tracking[token_address]["current"] = mc
@@ -122,7 +122,7 @@ def check_tokens():
             memory[token_address] = now
             continue
 
-        rugscore, honeypot, lp_locked = get_rugcheck_data(token_address)
+        rugscore, honeypot, lp_locked, holders = get_rugcheck_data(token_address)
         if honeypot is True:
             memory[token_address] = now
             continue
@@ -146,7 +146,6 @@ def check_tokens():
     save_json(memory, MEMORY_FILE)
     save_json(tracking, TRACKING_FILE)
 
-    # Check if it's 6h or 20h local for daily summary
     now_time = datetime.now().time()
     if now_time.hour == 6 and now_time.minute == 0:
         send_daily_winners()
