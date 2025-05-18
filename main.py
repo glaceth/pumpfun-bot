@@ -103,34 +103,6 @@ def send_telegram_message(message):
 def is_new_token(token_address, memory):
     return token_address not in memory
 
-def send_marketcap_gain_alert(token_address, data):
-    symbol = data["symbol"]
-    initial = data["initial"]
-    current = data["current"]
-    gain = current - initial
-    for threshold in [50_000, 100_000, 200_000, 500_000]:
-        if threshold not in data["alerts"] and gain >= threshold:
-            msg = f"📈 Token ${symbol} is up by +${threshold:,} since first detection!\nInitial: ${initial:,} → Now: ${current:,}"
-            send_telegram_message(msg)
-            data["alerts"].append(threshold)
-            return
-
-def send_daily_winners():
-    tracking = load_json(TRACKING_FILE)
-    gainers = []
-    for addr, t in tracking.items():
-        gain = t["current"] - t["initial"]
-        if gain > 0:
-            gainers.append({"symbol": t["symbol"], "initial": t["initial"], "current": t["current"], "gain": gain})
-    top = sorted(gainers, key=lambda x: x["gain"], reverse=True)[:3]
-    if not top:
-        send_telegram_message("📊 No tokens showed significant gains in the last 12h.")
-        return
-    msg = "📊 *Daily Winners (last 12h)*\n"
-    for i, t in enumerate(top, 1):
-        msg += f"{i}. ${t['symbol']}: ${t['initial']:,} → ${t['current']:,} (+${t['gain']:,})\n"
-    send_telegram_message(msg)
-
 def check_tokens():
     print("🔍 Checking tokens...")
     try:
@@ -154,20 +126,15 @@ def check_tokens():
         symbol = token.get("symbol", "N/A")
         mc = float(token.get("fullyDilutedValuation") or 0)
         lq = float(token.get("liquidity") or 0)
+        holders = int(token.get("holders") or 0)
 
-        if token_address in tracking:
-            tracking[token_address]["current"] = mc
-            send_marketcap_gain_alert(token_address, tracking[token_address])
-
-        if not is_new_token(token_address, memory):
-            continue
-
-        if mc < 20000 or lq < 10000:
+        # ✅ NOUVEAUX FILTRES STRICTS
+        if mc < 45000 or lq < 22000 or holders < 80:
             memory[token_address] = now
             continue
 
         rugscore, honeypot, lp_locked, holders = get_rugcheck_data(token_address)
-        if honeypot is True:
+        if honeypot:
             memory[token_address] = now
             continue
 
@@ -199,19 +166,15 @@ def check_tokens():
                     msg += "🔴 Risky Wallet\n"
             else:
                 msg += "\n"
-        msg += f"➤ [Pump.fun](https://pump.fun/{token_address}) | [Scamr](https://ai.scamr.xyz/token/{token_address}) | [Rugcheck](https://rugcheck.xyz/tokens/{token_address}) | [BubbleMaps](https://app.bubblemaps.io/sol/token/{token_address}) | [Twitter Search](https://twitter.com/search?q={symbol}&src=typed_query&f=live) | [Trade on Axiom](https://axiom.trade/@glace)\n"
+
+        msg += f"\n➤ [Pump.fun](https://pump.fun/{token_address}) | [Scamr](https://ai.scamr.xyz/token/{token_address}) | [Rugcheck](https://rugcheck.xyz/tokens/{token_address}) | [BubbleMaps](https://app.bubblemaps.io/sol/token/{token_address}) | [Twitter Search](https://twitter.com/search?q={symbol}&src=typed_query&f=live) | [Trade on Axiom](https://axiom.trade/@glace)\n"
         msg += f"*Token adresse:* `{token_address}`"
+
         send_telegram_message(msg)
 
     save_json(memory, MEMORY_FILE)
     save_json(tracking, TRACKING_FILE)
     save_json(wallet_stats, WALLET_STATS_FILE)
-
-    now_time = datetime.now().time()
-    if now_time.hour == 6 and now_time.minute == 0:
-        send_daily_winners()
-    elif now_time.hour == 20 and now_time.minute == 0:
-        send_daily_winners()
 
 def run_flask():
     app.run(host="0.0.0.0", port=8080)
