@@ -99,7 +99,7 @@ def get_smart_wallet_buy(token_address, current_mc, wallet_stats):
                 })
                 return amount_formatted, to_wallet, wallet_stats
     except Exception as e:
-        print("❌ Helius Error:", e)
+        print(" Helius Error:", e)
     return None, None, wallet_stats
 
 def update_wallet_winrate(wallet_stats, tracking):
@@ -125,14 +125,14 @@ def send_telegram_message(message, token_address):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     keyboard = {
         "inline_keyboard": [[
-            {"text": "🔗 Pump.fun", "url": f"https://pump.fun/{token_address}"},
-            {"text": "🔍 Scamr", "url": f"https://ai.scamr.xyz/token/{token_address}"}
+            {"text": " Pump.fun", "url": f"https://pump.fun/{token_address}"},
+            {"text": " Scamr", "url": f"https://ai.scamr.xyz/token/{token_address}"}
         ], [
-            {"text": "🛡 Rugcheck", "url": f"https://rugcheck.xyz/tokens/{token_address}"},
-            {"text": "🧠 BubbleMaps", "url": f"https://app.bubblemaps.io/sol/token/{token_address}"}
+            {"text": " Rugcheck", "url": f"https://rugcheck.xyz/tokens/{token_address}"},
+            {"text": " BubbleMaps", "url": f"https://app.bubblemaps.io/sol/token/{token_address}"}
         ], [
-            {"text": "💹 Axiom (ref)", "url": f"https://axiom.trade/@glace"},
-            {"text": "🤖 Analyze with AI", "url": f"https://pumpfun-bot-1.onrender.com/analyze?token={token_address}"}
+            {"text": " Axiom (ref)", "url": f"https://axiom.trade/@glace"},
+            {"text": " Analyze with AI", "url": f"https://pumpfun-bot-1.onrender.com/analyze?token={token_address}"}
         ]]
     }
     payload = {
@@ -145,14 +145,14 @@ def send_telegram_message(message, token_address):
         requests.post(url, json=payload)
         time.sleep(2)
     except Exception as e:
-        print("❌ Telegram error:", e)
+        print(" Telegram error:", e)
 
     payload = {"chat_id": CHAT_ID, "text": message, "parse_mode": "Markdown"}
     try:
         requests.post(url, json=payload)
         time.sleep(2)
     except Exception as e:
-        print("❌ Telegram error:", e)
+        print(" Telegram error:", e)
 
 def search_twitter_mentions(token_name, ticker):
     try:
@@ -168,12 +168,12 @@ def generate_progress_bar(percentage, width=20):
     return "▓" * filled + "░" * empty
 
 def check_tokens():
-    print("🔍 Checking tokens...")
+    print(" Checking tokens...")
     try:
         response = requests.get(API_URL, headers=HEADERS)
         data = response.json().get("result", [])
     except Exception as e:
-        print("❌ Moralis API error:", e)
+        print(" Moralis API error:", e)
         time.sleep(300)
         return
 
@@ -217,7 +217,7 @@ def check_tokens():
         memory[token_address] = now
         tracking[token_address] = {"symbol": symbol, "initial": mc, "current": mc, "alerts": []}
         
-        # 🔁 1h follow-up scan for performance messages
+        #  1h follow-up scan for performance messages
         for tracked_token, info in tracking.items():
             ts = info.get("timestamp")
             if not ts or (now - ts) < 3600 or (now - ts) > 4000:
@@ -230,44 +230,44 @@ def check_tokens():
             if mc_now > mc_entry and "soar" not in info["alerts"]:
                 multiplier = round(mc_now / mc_entry, 1)
                 if multiplier >= 2:
-                    message = f"🚀🚀🚀 ${symbol_tracked} soared by X{multiplier} in an hour since it was called! 🌕"
+                    message = f" ${symbol_tracked} soared by X{multiplier} in an hour since it was called! "
                     send_telegram_message(message, tracked_token)
                     info["alerts"].append("soar")
 
         save_json(tracking, TRACKING_FILE)
 
-        msg = f"""🔍 *NEW TOKEN DETECTED*
+        msg = f""" *NEW TOKEN DETECTED*
 
-💠 *Token:* ${symbol}
-🧾 *Address:* `{token_address}`
+ *Token:* ${symbol}
+ *Address:* `{token_address}`
 
-💰 *Market Cap:* ${int(mc):,}
-📊 *Volume 1h:* ${int(lq):,}
-👥 *Holders:* {holders}
+ *Market Cap:* ${int(mc):,}
+ *Volume 1h:* ${int(lq):,}
+ *Holders:* {holders}
 
-🧠 *Mentions X*
+ *Mentions X*
 - Nom: {mentions_name}
 - $Ticker: {mentions_ticker}
-🔗 [Voir sur X](https://twitter.com/search?q=%24{symbol})
+ [Voir sur X](https://twitter.com/search?q=%24{symbol})
 
 📈 *Bonding Progress:* {bonding_percent or 'N/A'}%
 {bonding_bar}
 
-🛡 *Security Check (Rugcheck.xyz)*
-- 🔥 Liquidity Burned: ✅
-- ❄️ Freeze Authority: ✅
-- ➕ Mint Authority: ✅
-- 🧮 Rugscore: {rugscore or 'N/A'} ✅
-- ✅ Token SAFE – LP Locked, No Honeypot
+ *Security Check (Rugcheck.xyz)*
+-  Liquidity Burned: 
+-  Freeze Authority: 
+-  Mint Authority: 
+-  Rugscore: {rugscore or 'N/A'} 
+-  Token SAFE – LP Locked, No Honeypot
 
-🐳 *Smart Wallet Buy:* {smart_buy} tokens
+ *Smart Wallet Buy:* {smart_buy} tokens
 - Winrate: {winrate}% {'🟢 Ultra Smart' if winrate and winrate >= 80 else '🟡 Smart' if winrate and winrate >= 60 else '🔴 Risky Wallet' if winrate and winrate < 30 else ''}
 
-📦 *Top 10 Holders:* {top_total or 'N/A'}%
+ *Top 10 Holders:* {top_total or 'N/A'}%
 {top_display}
-🧑‍💻 = Dev wallet, ✨ = New wallet (< 2 tokens)
+ = Dev wallet,  = New wallet (< 2 tokens)
 
-🔗 *Links*
+ *Links*
 - [Pump.fun](https://pump.fun/{token_address})
 - [Scamr](https://ai.scamr.xyz/token/{token_address})
 - [Rugcheck](https://rugcheck.xyz/tokens/{token_address})
@@ -280,7 +280,7 @@ def check_tokens():
         
         
         
-        # 🔍 Wallet deployer history
+        #  Wallet deployer history
         if wallet:
             prev_symbol, launch_count, prev_mc = get_wallet_deployment_stats(wallet)
             if prev_symbol:
@@ -290,27 +290,27 @@ def check_tokens():
                     msg += " [Serial]"
                 elif launch_count == 1:
                     msg += " [New]"
-👤 Prev Deployed: {prev_symbol} ({prev_mc:,})"
-🔁 # of Launches: {launch_count}"
+ Prev Deployed: {prev_symbol} ({prev_mc:,})"
+ # of Launches: {launch_count}"
                 if launch_count > 20:
-                    msg += " 🧨 Serial Launcher"
+                    msg += "  Serial Launcher"
                 elif launch_count == 1:
-                    msg += " 🆕 First Launch"
+                    msg += "  First Launch"
 
         
-        # 🧠 Check if token was already detected earlier and shows new spike
+        #  Check if token was already detected earlier and shows new spike
         previous_ts = tracking.get(token_address, {}).get("timestamp")
         if previous_ts and (now - previous_ts > 3600):
-            msg += f"\n\n🔁 Token previously detected {round((now - previous_ts) / 3600, 1)}h ago – new volume spike!"
+            msg += f"\n\n Token previously detected {round((now - previous_ts) / 3600, 1)}h ago – new volume spike!"
 
         
-        # 🧠 Check if token was already detected earlier and shows new spike
+        #  Check if token was already detected earlier and shows new spike
         previous_ts = tracking.get(token_address, {}).get("timestamp")
         if previous_ts and (now - previous_ts > 3600):
-            msg += f"\n\n🔁 Token previously detected {round((now - previous_ts) / 3600, 1)}h ago – new volume spike!"
+            msg += f"\n\n Token previously detected {round((now - previous_ts) / 3600, 1)}h ago – new volume spike!"
             mc_entry = tracking.get(token_address, {}).get("initial", mc)
             if mc > mc_entry * 2:
-                msg += " 🚀 x2+ pump since first call!"
+                msg += "  x2+ pump since first call!"
             elif mc > mc_entry * 1.5:
                 msg += " 📈 +50% since first call!"
 
@@ -318,7 +318,7 @@ def check_tokens():
 
     save_json(memory, MEMORY_FILE)
     
-        # 🔁 1h follow-up scan for performance messages
+        #  1h follow-up scan for performance messages
         for tracked_token, info in tracking.items():
             ts = info.get("timestamp")
             if not ts or (now - ts) < 3600 or (now - ts) > 4000:
@@ -331,7 +331,7 @@ def check_tokens():
             if mc_now > mc_entry and "soar" not in info["alerts"]:
                 multiplier = round(mc_now / mc_entry, 1)
                 if multiplier >= 2:
-                    message = f"🚀🚀🚀 ${symbol_tracked} soared by X{multiplier} in an hour since it was called! 🌕"
+                    message = f" ${symbol_tracked} soared by X{multiplier} in an hour since it was called! "
                     send_telegram_message(message, tracked_token)
                     info["alerts"].append("soar")
 
@@ -365,7 +365,7 @@ def receive_update():
         return "Unauthorized"
 
     if text == "/scan":
-        send_telegram_message("✅ Scan manuel lancé...", "manual")
+        send_telegram_message(" Scan manuel lancé...", "manual")
         check_tokens()
 
     elif text == "/status":
@@ -374,10 +374,10 @@ def receive_update():
             tracking = load_json(TRACKING_FILE)
             tokens_today = [k for k, v in memory.items() if time.time() - v < 86400]
             alerts = len(tracking)
-            msg = f"""📊 *Status du bot Pump.fun*
+            msg = f""" *Status du bot Pump.fun*
 
-- 🔍 Tokens scannés aujourd'hui : {len(tokens_today)}
-- 🚀 Tokens envoyés depuis lancement : {alerts}"""
+-  Tokens scannés aujourd'hui : {len(tokens_today)}
+-  Tokens envoyés depuis lancement : {alerts}"""
 
     
     elif text == "/top":
@@ -402,12 +402,12 @@ def receive_update():
                     msg += f"{i}. ${symbol} – x{gain}
 "
         except:
-            msg = "❌ Error while retrieving performance data."
+            msg = " Error while retrieving performance data."
         send_telegram_message(msg, "manual")
 
     elif text == "/help":
         msg = (
-            "🤖 *Commandes disponibles*
+            " *Commandes disponibles*
 
 "
             "• `/scan` – Lancer un scan manuel maintenant
@@ -419,7 +419,7 @@ def receive_update():
 "
             "Le bot détecte automatiquement les tokens Pump.fun prometteurs :
 "
-            "🧠 Smart Wallets • 📈 Bonding Curve • 🛡 Rugcheck • 🐳 Whale Tracking • 📦 Top Holders"
+            " Smart Wallets • 📈 Bonding Curve •  Rugcheck •  Whale Tracking •  Top Holders"
         )
         send_telegram_message(msg, "manual")
 
@@ -500,7 +500,7 @@ def ask_gpt(prompt):
         )
         return response.choices[0].message["content"]
     except Exception as e:
-        return f"❌ GPT error: {str(e)}"
+        return f" GPT error: {str(e)}"
 
 
 @app.route("/analyze", methods=["GET"])
@@ -529,5 +529,5 @@ def analyze_token():
     })
 
     result = ask_gpt(prompt)
-    send_telegram_message(f"🤖 *GPT Analysis – ${token_data.get('symbol')}*\n\n{result}", token_address)
+    send_telegram_message(f" *GPT Analysis – ${token_data.get('symbol')}*\n\n{result}", token_address)
     return "Analysis sent"
