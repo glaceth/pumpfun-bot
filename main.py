@@ -293,6 +293,23 @@ def check_tokens():
                 elif launch_count == 1:
                     msg += " 🆕 First Launch"
 
+        
+        # 🧠 Check if token was already detected earlier and shows new spike
+        previous_ts = tracking.get(token_address, {}).get("timestamp")
+        if previous_ts and (now - previous_ts > 3600):
+            msg += f"\n\n🔁 Token previously detected {round((now - previous_ts) / 3600, 1)}h ago – new volume spike!"
+
+        
+        # 🧠 Check if token was already detected earlier and shows new spike
+        previous_ts = tracking.get(token_address, {}).get("timestamp")
+        if previous_ts and (now - previous_ts > 3600):
+            msg += f"\n\n🔁 Token previously detected {round((now - previous_ts) / 3600, 1)}h ago – new volume spike!"
+            mc_entry = tracking.get(token_address, {}).get("initial", mc)
+            if mc > mc_entry * 2:
+                msg += " 🚀 x2+ pump since first call!"
+            elif mc > mc_entry * 1.5:
+                msg += " 📈 +50% since first call!"
+
         send_telegram_message(msg, token_address)
 
     save_json(memory, MEMORY_FILE)
