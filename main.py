@@ -215,6 +215,24 @@ def check_tokens():
 
         memory[token_address] = now
         tracking[token_address] = {"symbol": symbol, "initial": mc, "current": mc, "alerts": []}
+        
+        # 🔁 1h follow-up scan for performance messages
+        for tracked_token, info in tracking.items():
+            ts = info.get("timestamp")
+            if not ts or (now - ts) < 3600 or (now - ts) > 4000:
+                continue  # skip if not around 1h old
+
+            mc_entry = info.get("initial", 0)
+            mc_now = info.get("current", mc_entry)
+            symbol_tracked = info.get("symbol", "N/A")
+
+            if mc_now > mc_entry and "soar" not in info["alerts"]:
+                multiplier = round(mc_now / mc_entry, 1)
+                if multiplier >= 2:
+                    message = f"🚀🚀🚀 ${symbol_tracked} soared by X{multiplier} in an hour since it was called! 🌕"
+                    send_telegram_message(message, tracked_token)
+                    info["alerts"].append("soar")
+
         save_json(tracking, TRACKING_FILE)
 
         msg = f"""🔍 *NEW TOKEN DETECTED*
@@ -261,7 +279,25 @@ def check_tokens():
         send_telegram_message(msg, token_address)
 
     save_json(memory, MEMORY_FILE)
-    save_json(tracking, TRACKING_FILE)
+    
+        # 🔁 1h follow-up scan for performance messages
+        for tracked_token, info in tracking.items():
+            ts = info.get("timestamp")
+            if not ts or (now - ts) < 3600 or (now - ts) > 4000:
+                continue  # skip if not around 1h old
+
+            mc_entry = info.get("initial", 0)
+            mc_now = info.get("current", mc_entry)
+            symbol_tracked = info.get("symbol", "N/A")
+
+            if mc_now > mc_entry and "soar" not in info["alerts"]:
+                multiplier = round(mc_now / mc_entry, 1)
+                if multiplier >= 2:
+                    message = f"🚀🚀🚀 ${symbol_tracked} soared by X{multiplier} in an hour since it was called! 🌕"
+                    send_telegram_message(message, tracked_token)
+                    info["alerts"].append("soar")
+
+        save_json(tracking, TRACKING_FILE)
     save_json(wallet_stats, WALLET_STATS_FILE)
 
 def run_flask():
@@ -306,6 +342,32 @@ def receive_update():
 - 🚀 Tokens envoyés depuis lancement : {alerts}"
         except:
             msg = "❌ Erreur lors de la récupération du status."
+        send_telegram_message(msg, "manual")
+
+    
+    elif text == "/top":
+        try:
+            tracking = load_json(TRACKING_FILE)
+            scored = []
+            for token, info in tracking.items():
+                mc_entry = info.get("initial", 0)
+                mc_now = info.get("current", mc_entry)
+                symbol = info.get("symbol", "N/A")
+                if mc_now > mc_entry:
+                    gain = round(mc_now / mc_entry, 2)
+                    scored.append((symbol, gain))
+            if not scored:
+                msg = "📉 No significant pumps detected yet."
+            else:
+                scored = sorted(scored, key=lambda x: x[1], reverse=True)[:10]
+                msg = "🏆 *Top performing tokens after 1h:*
+
+"
+                for i, (symbol, gain) in enumerate(scored, 1):
+                    msg += f"{i}. ${symbol} – x{gain}
+"
+        except:
+            msg = "❌ Error while retrieving performance data."
         send_telegram_message(msg, "manual")
 
     elif text == "/help":
