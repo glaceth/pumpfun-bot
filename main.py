@@ -2,7 +2,7 @@ import os
 import time
 import json
 import requests
-from datetime import datetime, time as dtime
+from datetime import datetime
 from flask import Flask
 from threading import Thread
 
@@ -37,7 +37,7 @@ def get_rugcheck_data(token_address):
         honeypot = any("honeypot" in r["name"].lower() for r in risks)
         lp_locked = all("liquidity" not in r["name"].lower() or "not" not in r["description"].lower() for r in risks)
         return score, honeypot, lp_locked, holders
-    except Exception as e:
+    except Exception:
         return None, None, None, 0
 
 def load_json(file):
@@ -100,8 +100,13 @@ def send_telegram_message(message):
     except Exception as e:
         print("❌ Telegram error:", e)
 
-def is_new_token(token_address, memory):
-    return token_address not in memory
+def search_twitter_mentions(token_name, ticker):
+    try:
+        name_query = requests.get(f"https://api.x.com/search?q={token_name}").text
+        ticker_query = requests.get(f"https://api.x.com/search?q=%24{ticker}").text
+        return len(name_query), len(ticker_query)
+    except:
+        return 0, 0
 
 def check_tokens():
     print("🔍 Checking tokens...")
@@ -128,8 +133,7 @@ def check_tokens():
         lq = float(token.get("liquidity") or 0)
         holders = int(token.get("holders") or 0)
 
-        # ✅ NOUVEAUX FILTRES STRICTS
-        if mc < 45000 or lq < 22000 or holders < 80:
+        if mc < 45000 or lq < 8000 or holders < 80:
             memory[token_address] = now
             continue
 
@@ -142,18 +146,25 @@ def check_tokens():
         winrates = update_wallet_winrate(wallet_stats, tracking)
         winrate = winrates.get(wallet, None) if wallet else None
 
+        mentions_name, mentions_ticker = search_twitter_mentions(name, symbol)
+
         memory[token_address] = now
         tracking[token_address] = {"symbol": symbol, "initial": mc, "current": mc, "alerts": []}
         save_json(tracking, TRACKING_FILE)
 
-        msg = "*NEW TOKEN DETECTED*\n"
+        msg = "*🚀 NEW TOKEN DETECTED*\n"
         msg += f"*Token:* ${symbol}\n"
-        msg += f"*Market Cap:* {'{:,}'.format(int(mc))} | *Volume 1h:* {'{:,}'.format(int(lq))}\n"
+        msg += f"*Market Cap:* ${int(mc):,} | *Volume 1h:* ${int(lq):,}\n"
         msg += f"*Holders:* {holders}\n"
+
+        msg += f"🧠 *Mentions X* – Nom: {mentions_name} | $Ticker: {mentions_ticker}\n"
+        msg += f"🔗 [Voir sur X](https://twitter.com/search?q=%24{symbol})\n"
+
         if rugscore is not None:
             msg += f"*Rugscore:* {rugscore} ✅\n"
         if lp_locked and not honeypot:
             msg += "✅ Token SAFE – LP Locked, No Honeypot\n"
+
         if smart_buy:
             msg += f"🐳 Smart Wallet Buy: {smart_buy} SOL"
             if winrate is not None:
@@ -167,8 +178,12 @@ def check_tokens():
             else:
                 msg += "\n"
 
-        msg += f"\n➤ [Pump.fun](https://pump.fun/{token_address}) | [Scamr](https://ai.scamr.xyz/token/{token_address}) | [Rugcheck](https://rugcheck.xyz/tokens/{token_address}) | [BubbleMaps](https://app.bubblemaps.io/sol/token/{token_address}) | [Twitter Search](https://twitter.com/search?q={symbol}&src=typed_query&f=live) | [Trade on Axiom](https://axiom.trade/@glace)\n"
-        msg += f"*Token adresse:* `{token_address}`"
+        msg += f"\n🔗 [Pump.fun](https://pump.fun/{token_address})"
+        msg += f" | [Scamr](https://ai.scamr.xyz/token/{token_address})"
+        msg += f" | [Rugcheck](https://rugcheck.xyz/tokens/{token_address})"
+        msg += f" | [BubbleMaps](https://app.bubblemaps.io/sol/token/{token_address})"
+        msg += f" | [Axiom](https://axiom.trade/@glace)\n"
+        msg += f"*Token address:* `{token_address}`"
 
         send_telegram_message(msg)
 
@@ -182,7 +197,7 @@ def run_flask():
 def start_loop():
     while True:
         check_tokens()
-        time.sleep(60)
+        time.sleep(120)  # Pause de 2 minutes entre chaque scan
 
 if __name__ == "__main__":
     Thread(target=run_flask).start()
