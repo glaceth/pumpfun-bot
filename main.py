@@ -276,6 +276,23 @@ def check_tokens():
 📎 *Token address:*
 `{token_address}`
 """
+        
+        
+        
+        # 🔍 Wallet deployer history
+        if wallet:
+            prev_symbol, launch_count, prev_mc = get_wallet_deployment_stats(wallet)
+            if prev_symbol:
+                msg += f"
+
+👤 Prev Deployed: ${prev_symbol} (${prev_mc:,})"
+                msg += f"
+🔁 # of Launches: {launch_count}"
+                if launch_count > 20:
+                    msg += " 🧨 Serial Launcher"
+                elif launch_count == 1:
+                    msg += " 🆕 First Launch"
+
         send_telegram_message(msg, token_address)
 
     save_json(memory, MEMORY_FILE)
@@ -389,3 +406,34 @@ def receive_update():
         send_telegram_message(msg, "manual")
 
     return "OK"
+
+
+def get_wallet_deployment_stats(wallet_address):
+    try:
+        url = f"https://api.helius.xyz/v0/addresses/{wallet_address}/transactions?api-key={HELIUS_API_KEY}&limit=20"
+        response = requests.get(url)
+        txs = response.json()
+
+        deployed_tokens = []
+
+        for tx in txs:
+            if "tokenTransfers" in tx:
+                for transfer in tx["tokenTransfers"]:
+                    if transfer.get("type") == "mint":
+                        token_address = transfer.get("mint")
+                        if token_address:
+                            deployed_tokens.append(token_address)
+
+        if not deployed_tokens:
+            return None, 0, None
+
+        last_token = deployed_tokens[0]
+        cs_url = f"https://api.callstaticrpc.com/pumpfun/v1/token/{last_token}"
+        headers = {"Authorization": f"Bearer {CALLSTATIC_API}"}
+        cs_res = requests.get(cs_url, headers=headers)
+        cs_data = cs_res.json()
+        last_symbol = cs_data.get("symbol", "N/A")
+        last_mc = cs_data.get("fullyDilutedValuation", 0)
+        return last_symbol, len(deployed_tokens), int(last_mc)
+    except Exception as e:
+        return None, 0, None
