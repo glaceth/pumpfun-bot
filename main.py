@@ -4,7 +4,7 @@ import time
 import json
 import requests
 from datetime import datetime
-from flask import Flask
+from flask import Flask, request
 from threading import Thread
 
 app = Flask(__name__)
@@ -131,7 +131,8 @@ def send_telegram_message(message, token_address):
             {"text": "🛡 Rugcheck", "url": f"https://rugcheck.xyz/tokens/{token_address}"},
             {"text": "🧠 BubbleMaps", "url": f"https://app.bubblemaps.io/sol/token/{token_address}"}
         ], [
-            {"text": "💹 Axiom (ref)", "url": f"https://axiom.trade/@glace"}
+            {"text": "💹 Axiom (ref)", "url": f"https://axiom.trade/@glace"},
+            {"text": "🤖 Analyze with AI", "url": f"https://pumpfun-bot-1.onrender.com/analyze?token={token_address}"}
         ]]
     }
     payload = {
@@ -454,3 +455,79 @@ def get_wallet_deployment_stats(wallet_address):
         return last_symbol, len(deployed_tokens), int(last_mc)
     except Exception as e:
         return None, 0, None
+
+
+import openai
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+openai.api_key = OPENAI_API_KEY
+
+def build_token_analysis_prompt(data):
+    return f"""
+You are an experienced crypto trader with 20 years of market knowledge.
+
+Here’s the data of a token just launched on Pump.fun:
+- Name: {data['name']}
+- Symbol: ${data['symbol']}
+- Market Cap: ${data['market_cap']:,}
+- Liquidity: ${data['liquidity']:,}
+- Holders: {data['holders']}
+- Bonding Curve: {data['bonding_percent']}%
+- Rugscore: {data['rugscore']}
+- Smart Wallet Detected: {'Yes' if data['smart_wallet'] else 'No'}
+- Last Token Deployed by this wallet: {data['prev_token']} (${data['prev_mc']})
+- Total Launches by Deployer: {data['launch_count']}
+
+Please analyze this token from a risk/reward perspective.
+Answer like a pro trader:
+- Entry point advice
+- Stop-loss suggestion
+- What % of portfolio to allocate
+- Take profit strategy
+- Timeframe for re-evaluation
+- Risk level (Low/Med/High) and brief reasoning
+"""
+
+def ask_gpt(prompt):
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "You are a seasoned crypto trader providing risk-based analysis of meme tokens."},
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=600,
+            temperature=0.7
+        )
+        return response.choices[0].message["content"]
+    except Exception as e:
+        return f"❌ GPT error: {str(e)}"
+
+
+@app.route("/analyze", methods=["GET"])
+def analyze_token():
+    token_address = request.args.get("token")
+    if not token_address:
+        return "Token address missing", 400
+
+    tracking = load_json(TRACKING_FILE)
+    token_data = tracking.get(token_address)
+    if not token_data:
+        return "Token not found", 404
+
+    prompt = build_token_analysis_prompt({
+        "name": token_data.get("name", "N/A"),
+        "symbol": token_data.get("symbol", "N/A"),
+        "market_cap": token_data.get("current", 0),
+        "liquidity": token_data.get("liquidity", 15000),
+        "holders": token_data.get("holders", 123),
+        "bonding_percent": token_data.get("bonding_percent", 65),
+        "rugscore": token_data.get("rugscore", 85),
+        "smart_wallet": token_data.get("smart_wallet", True),
+        "prev_token": token_data.get("prev_token", "MOON"),
+        "prev_mc": token_data.get("prev_mc", 87000),
+        "launch_count": token_data.get("launch_count", 9)
+    })
+
+    result = ask_gpt(prompt)
+    send_telegram_message(f"🤖 *GPT Analysis – ${token_data.get('symbol')}*\n\n{result}", token_address)
+    return "Analysis sent"
