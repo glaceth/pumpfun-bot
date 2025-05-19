@@ -282,17 +282,15 @@ def check_tokens():
         
         # 🔍 Wallet deployer history
         if wallet:
-            prev_symbol, launch_count, prev_mc = get_wallet_deployment_stats(wallet)
-            if prev_symbol:
-                msg += f"
+    prev_symbol, launch_count, prev_mc = get_wallet_deployment_stats(wallet)
+    if prev_symbol:
+        msg += f"\n\n👤 Prev Deployed: ${prev_symbol} ({prev_mc:,})"
+        msg += f"\n🔁 # of Launches: {launch_count}"
+        if launch_count > 20:
+            msg += " 🧨 Serial Launcher"
+        elif launch_count == 1:
+            msg += " 🆕 First Launch"
 
-👤 Prev Deployed: ${prev_symbol} (${prev_mc:,})"
-                msg += f"
-🔁 # of Launches: {launch_count}"
-                if launch_count > 20:
-                    msg += " 🧨 Serial Launcher"
-                elif launch_count == 1:
-                    msg += " 🆕 First Launch"
 
         
         # 🧠 Check if token was already detected earlier and shows new spike
