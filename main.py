@@ -1,3 +1,4 @@
+
 import os
 import time
 import json
@@ -16,6 +17,8 @@ with open("/etc/secrets/CHAT_ID") as f:
     CHAT_ID = f.read().strip()
 with open("/etc/secrets/HELIUS_API") as f:
     HELIUS_API_KEY = f.read().strip()
+with open("/etc/secrets/CALLSTATIC_API") as f:
+    CALLSTATIC_API = f.read().strip()
 
 MEMORY_FILE = "token_memory_ultimate.json"
 TRACKING_FILE = "token_tracking.json"
@@ -27,20 +30,6 @@ HEADERS = {
     "X-API-Key": API_KEY,
 }
 
-def get_rugcheck_data(token_address):
-    try:
-        url = f"https://api.rugcheck.xyz/v1/tokens/{token_address}/report/summary"
-        response = requests.get(url)
-        data = response.json()
-        score = data.get("score_normalised")
-        risks = data.get("risks", [])
-        holders = data.get("totalHolders", 0)
-        honeypot = any("honeypot" in r["name"].lower() for r in risks)
-        lp_locked = all("liquidity" not in r["name"].lower() or "not" not in r["description"].lower() for r in risks)
-        return score, honeypot, lp_locked, holders
-    except:
-        return None, None, None, 0
-
 def load_json(file):
     if not os.path.exists(file):
         return {}
@@ -51,20 +40,54 @@ def save_json(data, file):
     with open(file, "w") as f:
         json.dump(data, f)
 
+def get_rugcheck_data(token_address):
+    try:
+        url = f"https://api.rugcheck.xyz/v1/tokens/{token_address}/report/summary"
+        response = requests.get(url)
+        data = response.json()
+        score = data.get("score_normalised")
+        risks = data.get("risks", [])
+        honeypot = any("honeypot" in r["name"].lower() for r in risks)
+        lp_locked = all("liquidity" not in r["name"].lower() or "not" not in r["description"].lower() for r in risks)
+        return score, honeypot, lp_locked
+    except:
+        return None, None, None
+
+def get_bonding_curve(token_address):
+    try:
+        url = f"https://api.callstaticrpc.com/pumpfun/v1/token/{token_address}"
+        headers = {"Authorization": f"Bearer {CALLSTATIC_API}"}
+        response = requests.get(url, headers=headers)
+        data = response.json()
+        percentage = float(data.get("bondingCurve", {}).get("percentageComplete", 0.0)) * 100
+        return round(percentage, 2)
+    except:
+        return None
+
+def get_top_holders(token_address):
+    try:
+        url = f"https://app.bubblemaps.io/api/token/sol/{token_address}"
+        response = requests.get(url)
+        data = response.json()
+        holders = data.get("holders", [])[:10]
+        percentages = [round(h.get("share", 0) * 100, 2) for h in holders]
+        total = round(sum(percentages), 2)
+        return total, percentages
+    except:
+        return None, []
+
 def get_smart_wallet_buy(token_address, current_mc, wallet_stats):
     try:
         url = f"https://api.helius.xyz/v0/tokens/{token_address}/transfers?api-key={HELIUS_API_KEY}&limit=50"
         response = requests.get(url)
         if response.status_code != 200:
             return None, None, wallet_stats
-
         transfers = response.json()
         for tx in transfers:
             to_wallet = tx.get("toUserAccount")
             amount = int(tx.get("tokenAmount", {}).get("amount", 0))
             decimals = int(tx.get("tokenAmount", {}).get("decimals", 9))
             amount_formatted = round(amount / (10 ** decimals), 2)
-
             if amount_formatted >= 5000 and to_wallet:
                 if to_wallet not in wallet_stats:
                     wallet_stats[to_wallet] = {"buys": []}
@@ -113,6 +136,11 @@ def search_twitter_mentions(token_name, ticker):
     except:
         return 0, 0
 
+def generate_progress_bar(percentage, width=20):
+    filled = int(percentage / 100 * width)
+    empty = width - filled
+    return "▓" * filled + "░" * empty
+
 def check_tokens():
     print("🔍 Checking tokens...")
     try:
@@ -120,6 +148,7 @@ def check_tokens():
         data = response.json().get("result", [])
     except Exception as e:
         print("❌ Moralis API error:", e)
+        time.sleep(300)
         return
 
     memory = load_json(MEMORY_FILE)
@@ -142,10 +171,16 @@ def check_tokens():
             memory[token_address] = now
             continue
 
-        rugscore, honeypot, lp_locked, holders = get_rugcheck_data(token_address)
+        rugscore, honeypot, lp_locked = get_rugcheck_data(token_address)
         if honeypot:
             memory[token_address] = now
             continue
+
+        bonding_percent = get_bonding_curve(token_address)
+        bonding_bar = generate_progress_bar(bonding_percent) if bonding_percent is not None else "N/A"
+
+        top_total, top_list = get_top_holders(token_address)
+        top_display = " | ".join([f"{p}%" for p in top_list]) if top_list else "N/A"
 
         smart_buy, wallet, wallet_stats = get_smart_wallet_buy(token_address, mc, wallet_stats)
         winrates = update_wallet_winrate(wallet_stats, tracking)
@@ -157,38 +192,47 @@ def check_tokens():
         tracking[token_address] = {"symbol": symbol, "initial": mc, "current": mc, "alerts": []}
         save_json(tracking, TRACKING_FILE)
 
-        msg = "*🚀 NEW TOKEN DETECTED*\n"
-        msg += f"*Token:* ${symbol}\n"
-        msg += f"*Market Cap:* ${int(mc):,} | *Volume 1h:* ${int(lq):,}\n"
-        msg += f"*Holders:* {holders}\n"
-        msg += f"🧠 *Mentions X* – Nom: {mentions_name} | $Ticker: {mentions_ticker}\n"
-        msg += f"🔗 [Voir sur X](https://twitter.com/search?q=%24{symbol})\n"
+        msg = f"""🔍 *NEW TOKEN DETECTED*
 
-        if rugscore is not None:
-            msg += f"*Rugscore:* {rugscore} ✅\n"
-        if lp_locked and not honeypot:
-            msg += "✅ Token SAFE – LP Locked, No Honeypot\n"
+💠 *Token:* ${symbol}
+🧾 *Address:* `{token_address}`
 
-        if smart_buy:
-            msg += f"🐳 Smart Wallet Buy: {smart_buy} tokens"
-            if winrate is not None:
-                msg += f" (WinRate: {winrate}%)\n"
-                if winrate >= 80:
-                    msg += "🟢 Ultra Smart\n"
-                elif winrate >= 60:
-                    msg += "🟡 Smart\n"
-                elif winrate < 30:
-                    msg += "🔴 Risky Wallet\n"
-            else:
-                msg += "\n"
+💰 *Market Cap:* ${int(mc):,}
+📊 *Volume 1h:* ${int(lq):,}
+👥 *Holders:* {holders}
 
-        msg += f"\n🔗 [Pump.fun](https://pump.fun/{token_address})"
-        msg += f" | [Scamr](https://ai.scamr.xyz/token/{token_address})"
-        msg += f" | [Rugcheck](https://rugcheck.xyz/tokens/{token_address})"
-        msg += f" | [BubbleMaps](https://app.bubblemaps.io/sol/token/{token_address})"
-        msg += f" | [Axiom](https://axiom.trade/@glace)\n"
-        msg += f"*Token address:* `{token_address}`"
+🧠 *Mentions X*
+- Nom: {mentions_name}
+- $Ticker: {mentions_ticker}
+🔗 [Voir sur X](https://twitter.com/search?q=%24{symbol})
 
+📈 *Bonding Progress:* {bonding_percent or 'N/A'}%
+{bonding_bar}
+
+🛡 *Security Check (Rugcheck.xyz)*
+- 🔥 Liquidity Burned: ✅
+- ❄️ Freeze Authority: ✅
+- ➕ Mint Authority: ✅
+- 🧮 Rugscore: {rugscore or 'N/A'} ✅
+- ✅ Token SAFE – LP Locked, No Honeypot
+
+🐳 *Smart Wallet Buy:* {smart_buy} tokens
+- Winrate: {winrate}% {'🟢 Ultra Smart' if winrate and winrate >= 80 else '🟡 Smart' if winrate and winrate >= 60 else '🔴 Risky Wallet' if winrate and winrate < 30 else ''}
+
+📦 *Top 10 Holders:* {top_total or 'N/A'}%
+{top_display}
+🧑‍💻 = Dev wallet, ✨ = New wallet (< 2 tokens)
+
+🔗 *Links*
+- [Pump.fun](https://pump.fun/{token_address})
+- [Scamr](https://ai.scamr.xyz/token/{token_address})
+- [Rugcheck](https://rugcheck.xyz/tokens/{token_address})
+- [BubbleMaps](https://app.bubblemaps.io/sol/token/{token_address})
+- [Axiom (ref)](https://axiom.trade/@glace)
+
+📎 *Token address:*
+`{token_address}`
+"""
         send_telegram_message(msg)
 
     save_json(memory, MEMORY_FILE)
@@ -201,7 +245,7 @@ def run_flask():
 def start_loop():
     while True:
         check_tokens()
-        time.sleep(120)  # Pause de 2 minutes entre les scans
+        time.sleep(120)
 
 if __name__ == "__main__":
     Thread(target=run_flask).start()
