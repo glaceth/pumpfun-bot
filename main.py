@@ -281,7 +281,7 @@ def check_tokens():
         
         
         # 🔍 Wallet deployer history
-        if wallet:
+    if wallet:
     prev_symbol, launch_count, prev_mc = get_wallet_deployment_stats(wallet)
     if prev_symbol:
         msg += f"\n\n👤 Prev Deployed: ${prev_symbol} ({prev_mc:,})"
