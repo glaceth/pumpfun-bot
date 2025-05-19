@@ -119,8 +119,32 @@ def update_wallet_winrate(wallet_stats, tracking):
             winrates[wallet] = rate
     return winrates
 
-def send_telegram_message(message):
+
+def send_telegram_message(message, token_address):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    keyboard = {
+        "inline_keyboard": [[
+            {"text": "🔗 Pump.fun", "url": f"https://pump.fun/{token_address}"},
+            {"text": "🔍 Scamr", "url": f"https://ai.scamr.xyz/token/{token_address}"}
+        ], [
+            {"text": "🛡 Rugcheck", "url": f"https://rugcheck.xyz/tokens/{token_address}"},
+            {"text": "🧠 BubbleMaps", "url": f"https://app.bubblemaps.io/sol/token/{token_address}"}
+        ], [
+            {"text": "💹 Axiom (ref)", "url": f"https://axiom.trade/@glace"}
+        ]]
+    }
+    payload = {
+        "chat_id": CHAT_ID,
+        "text": message,
+        "parse_mode": "Markdown",
+        "reply_markup": keyboard
+    }
+    try:
+        requests.post(url, json=payload)
+        time.sleep(2)
+    except Exception as e:
+        print("❌ Telegram error:", e)
+
     payload = {"chat_id": CHAT_ID, "text": message, "parse_mode": "Markdown"}
     try:
         requests.post(url, json=payload)
@@ -233,7 +257,7 @@ def check_tokens():
 📎 *Token address:*
 `{token_address}`
 """
-        send_telegram_message(msg)
+        send_telegram_message(msg, token_address)
 
     save_json(memory, MEMORY_FILE)
     save_json(tracking, TRACKING_FILE)
