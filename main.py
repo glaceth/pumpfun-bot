@@ -14,12 +14,13 @@ with open("/etc/secrets/TELEGRAM_TOKEN") as f:
     TELEGRAM_TOKEN = f.read().strip()
 with open("/etc/secrets/CHAT_ID") as f:
     CHAT_ID = f.read().strip()
+with open("/etc/secrets/HELIUS_API") as f:
+    HELIUS_API_KEY = f.read().strip()
 
 MEMORY_FILE = "token_memory_ultimate.json"
 TRACKING_FILE = "token_tracking.json"
 WALLET_STATS_FILE = "wallet_stats.json"
 API_URL = "https://solana-gateway.moralis.io/token/mainnet/exchange/pumpfun/graduated?limit=100"
-HELIUS_API_KEY = "1300eb61-2fbd-4ec4-bdbf-22b34e1c8708"
 
 HEADERS = {
     "Accept": "application/json",
@@ -37,7 +38,7 @@ def get_rugcheck_data(token_address):
         honeypot = any("honeypot" in r["name"].lower() for r in risks)
         lp_locked = all("liquidity" not in r["name"].lower() or "not" not in r["description"].lower() for r in risks)
         return score, honeypot, lp_locked, holders
-    except Exception:
+    except:
         return None, None, None, 0
 
 def load_json(file):
@@ -52,25 +53,29 @@ def save_json(data, file):
 
 def get_smart_wallet_buy(token_address, current_mc, wallet_stats):
     try:
-        base_token = token_address.replace("pump", "")
-        url = f"https://api.helius.xyz/v0/addresses/{base_token}/transactions?api-key={HELIUS_API_KEY}"
+        url = f"https://api.helius.xyz/v0/tokens/{token_address}/transfers?api-key={HELIUS_API_KEY}&limit=50"
         response = requests.get(url)
         if response.status_code != 200:
-            return None, None, None
-        transactions = response.json()
-        for tx in transactions:
-            if "tokenTransfers" in tx:
-                for transfer in tx["tokenTransfers"]:
-                    amt = transfer.get("amount", 0)
-                    if amt > 5 * 10**9:
-                        wallet = transfer.get("fromUserAccount", "unknown")
-                        amount_sol = round(amt / 10**9, 2)
-                        if wallet not in wallet_stats:
-                            wallet_stats[wallet] = {"buys": []}
-                        wallet_stats[wallet]["buys"].append({"token": token_address, "mc_entry": current_mc, "mc_now": current_mc})
-                        return amount_sol, wallet, wallet_stats
-    except:
-        pass
+            return None, None, wallet_stats
+
+        transfers = response.json()
+        for tx in transfers:
+            to_wallet = tx.get("toUserAccount")
+            amount = int(tx.get("tokenAmount", {}).get("amount", 0))
+            decimals = int(tx.get("tokenAmount", {}).get("decimals", 9))
+            amount_formatted = round(amount / (10 ** decimals), 2)
+
+            if amount_formatted >= 5000 and to_wallet:
+                if to_wallet not in wallet_stats:
+                    wallet_stats[to_wallet] = {"buys": []}
+                wallet_stats[to_wallet]["buys"].append({
+                    "token": token_address,
+                    "mc_entry": current_mc,
+                    "mc_now": current_mc
+                })
+                return amount_formatted, to_wallet, wallet_stats
+    except Exception as e:
+        print("❌ Helius Error:", e)
     return None, None, wallet_stats
 
 def update_wallet_winrate(wallet_stats, tracking):
@@ -156,7 +161,6 @@ def check_tokens():
         msg += f"*Token:* ${symbol}\n"
         msg += f"*Market Cap:* ${int(mc):,} | *Volume 1h:* ${int(lq):,}\n"
         msg += f"*Holders:* {holders}\n"
-
         msg += f"🧠 *Mentions X* – Nom: {mentions_name} | $Ticker: {mentions_ticker}\n"
         msg += f"🔗 [Voir sur X](https://twitter.com/search?q=%24{symbol})\n"
 
@@ -166,7 +170,7 @@ def check_tokens():
             msg += "✅ Token SAFE – LP Locked, No Honeypot\n"
 
         if smart_buy:
-            msg += f"🐳 Smart Wallet Buy: {smart_buy} SOL"
+            msg += f"🐳 Smart Wallet Buy: {smart_buy} tokens"
             if winrate is not None:
                 msg += f" (WinRate: {winrate}%)\n"
                 if winrate >= 80:
@@ -197,7 +201,7 @@ def run_flask():
 def start_loop():
     while True:
         check_tokens()
-        time.sleep(120)  # Pause de 2 minutes entre chaque scan
+        time.sleep(120)  # Pause de 2 minutes entre les scans
 
 if __name__ == "__main__":
     Thread(target=run_flask).start()
