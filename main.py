@@ -279,6 +279,7 @@ if __name__ == "__main__":
 
 from flask import request
 
+
 @app.route(f"/bot/{TELEGRAM_TOKEN}", methods=["POST"])
 def receive_update():
     data = request.get_json()
@@ -286,7 +287,43 @@ def receive_update():
     chat_id = str(message.get("chat", {}).get("id", ""))
     text = message.get("text", "")
 
-    if text == "/scan" and chat_id == ADMIN_USER_ID:
+    if chat_id != ADMIN_USER_ID:
+        return "Unauthorized"
+
+    if text == "/scan":
         send_telegram_message("✅ Scan manuel lancé...", "manual")
         check_tokens()
+
+    elif text == "/status":
+        try:
+            memory = load_json(MEMORY_FILE)
+            tracking = load_json(TRACKING_FILE)
+            tokens_today = [k for k, v in memory.items() if time.time() - v < 86400]
+            alerts = len(tracking)
+            msg = f"📊 *Status du bot Pump.fun*
+
+- 🔍 Tokens scannés aujourd'hui : {len(tokens_today)}
+- 🚀 Tokens envoyés depuis lancement : {alerts}"
+        except:
+            msg = "❌ Erreur lors de la récupération du status."
+        send_telegram_message(msg, "manual")
+
+    elif text == "/help":
+        msg = (
+            "🤖 *Commandes disponibles*
+
+"
+            "• `/scan` – Lancer un scan manuel maintenant
+"
+            "• `/status` – Voir combien de tokens ont été scannés et envoyés
+"
+            "• `/help` – Afficher cette aide
+
+"
+            "Le bot détecte automatiquement les tokens Pump.fun prometteurs :
+"
+            "🧠 Smart Wallets • 📈 Bonding Curve • 🛡 Rugcheck • 🐳 Whale Tracking • 📦 Top Holders"
+        )
+        send_telegram_message(msg, "manual")
+
     return "OK"
