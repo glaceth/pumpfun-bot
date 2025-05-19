@@ -281,16 +281,18 @@ def check_tokens():
         
         
         # 🔍 Wallet deployer history
-    if wallet:
-    prev_symbol, launch_count, prev_mc = get_wallet_deployment_stats(wallet)
-    if prev_symbol:
-        msg += f"\n\n👤 Prev Deployed: ${prev_symbol} ({prev_mc:,})"
-        msg += f"\n🔁 # of Launches: {launch_count}"
-        if launch_count > 20:
-            msg += " 🧨 Serial Launcher"
-        elif launch_count == 1:
-            msg += " 🆕 First Launch"
+        if wallet:
+            prev_symbol, launch_count, prev_mc = get_wallet_deployment_stats(wallet)
+            if prev_symbol:
+                msg += f"
 
+👤 Prev Deployed: ${prev_symbol} (${prev_mc:,})"
+                msg += f"
+🔁 # of Launches: {launch_count}"
+                if launch_count > 20:
+                    msg += " 🧨 Serial Launcher"
+                elif launch_count == 1:
+                    msg += " 🆕 First Launch"
 
         
         # 🧠 Check if token was already detected earlier and shows new spike
@@ -369,14 +371,10 @@ def receive_update():
             tracking = load_json(TRACKING_FILE)
             tokens_today = [k for k, v in memory.items() if time.time() - v < 86400]
             alerts = len(tracking)
-          msg = f"""📊 *Status du bot Pump.fun*
+            msg = f"""📊 *Status du bot Pump.fun*
 
 - 🔍 Tokens scannés aujourd'hui : {len(tokens_today)}
-- 🚀 Tokens envoyés depuis lancement : {alerts}
-"""
-        except:
-            msg = "❌ Erreur lors de la récupération du status."
-        send_telegram_message(msg, "manual")
+- 🚀 Tokens envoyés depuis lancement : {alerts}"""
 
     
     elif text == "/top":
