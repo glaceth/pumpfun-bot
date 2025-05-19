@@ -369,10 +369,11 @@ def receive_update():
             tracking = load_json(TRACKING_FILE)
             tokens_today = [k for k, v in memory.items() if time.time() - v < 86400]
             alerts = len(tracking)
-            msg = f"📊 *Status du bot Pump.fun*
+          msg = f"""📊 *Status du bot Pump.fun*
 
 - 🔍 Tokens scannés aujourd'hui : {len(tokens_today)}
-- 🚀 Tokens envoyés depuis lancement : {alerts}"
+- 🚀 Tokens envoyés depuis lancement : {alerts}
+"""
         except:
             msg = "❌ Erreur lors de la récupération du status."
         send_telegram_message(msg, "manual")
