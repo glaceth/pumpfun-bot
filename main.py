@@ -8,6 +8,7 @@ from flask import Flask
 from threading import Thread
 
 app = Flask(__name__)
+ADMIN_USER_ID = os.getenv("ADMIN_USER_ID")
 
 with open("/etc/secrets/MORALIS_API") as f:
     API_KEY = f.read().strip()
@@ -274,3 +275,18 @@ def start_loop():
 if __name__ == "__main__":
     Thread(target=run_flask).start()
     start_loop()
+
+
+from flask import request
+
+@app.route(f"/bot/{TELEGRAM_TOKEN}", methods=["POST"])
+def receive_update():
+    data = request.get_json()
+    message = data.get("message", {})
+    chat_id = str(message.get("chat", {}).get("id", ""))
+    text = message.get("text", "")
+
+    if text == "/scan" and chat_id == ADMIN_USER_ID:
+        send_telegram_message("✅ Scan manuel lancé...", "manual")
+        check_tokens()
+    return "OK"
