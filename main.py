@@ -349,7 +349,7 @@ if __name__ == "__main__":
 from flask import request
 
 
-@app.route(f"/bot/{TELEGRAM_TOKEN}", methods=["POST"])
+@app.route("/bot", methods=["POST"])
 def receive_update():
     data = request.get_json()
     if "message" not in data:
