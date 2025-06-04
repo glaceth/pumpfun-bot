@@ -16,7 +16,7 @@ app = Flask(__name__)
 
 # === Mock functions (replace with real ones in full version) ===
 def send_telegram_message(message, token_address):
-    print(f"[MOCK] Sending Telegram message:
+    print(f"[MOCK] Sending Telegram message:")
 {message}")
 
 def load_json(file):
