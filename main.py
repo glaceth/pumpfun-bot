@@ -286,7 +286,7 @@ def check_tokens():
             if prev_symbol:
 msg += ""
 
-👤 Prev Deployed: ${prev_symbol} (${prev_mc:,})"
+ Prev Deployed: ${prev_symbol} (${prev_mc:,})"
 msg += ""
 🔁 # of Launches: {launch_count}"
                 if launch_count > 20:
