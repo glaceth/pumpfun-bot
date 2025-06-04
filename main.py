@@ -216,7 +216,7 @@ def check_tokens():
 
         memory[token_address] = now
         tracking[token_address] = {"symbol": symbol, "initial": mc, "current": mc, "alerts": []}
-        
+
         #  1h follow-up scan for performance messages
         for tracked_token, info in tracking.items():
             ts = info.get("timestamp")
@@ -277,30 +277,29 @@ def check_tokens():
 📎 *Token address:*
 `{token_address}`
 """
-        
-        
-        
+
+
+
         # 🔍 Wallet deployer history
         if wallet:
             prev_symbol, launch_count, prev_mc = get_wallet_deployment_stats(wallet)
             if prev_symbol:
-                msg += ""
-
-msg += f"\n\nPrev Deployed: ${prev_symbol} (${prev_mc:,})"
-msg += ""
- # of Launches: {launch_count}"
+                msg += f"\n\nPrev Deployed: ${prev_symbol} (${prev_mc:,})"
+                msg += f"\n# of Launches: {launch_count}"
                 if launch_count > 20:
                     msg += " 🧨 Serial Launcher"
                 elif launch_count == 1:
                     msg += " 🆕 First Launch"
 
-        
+
+
+
         # 🧠 Check if token was already detected earlier and shows new spike
         previous_ts = tracking.get(token_address, {}).get("timestamp")
         if previous_ts and (now - previous_ts > 3600):
             msg += f"\n\n Token previously detected {round((now - previous_ts) / 3600, 1)}h ago – new volume spike!"
 
-        
+
         # 🧠 Check if token was already detected earlier and shows new spike
         previous_ts = tracking.get(token_address, {}).get("timestamp")
         if previous_ts and (now - previous_ts > 3600):
@@ -314,23 +313,21 @@ msg += ""
         send_telegram_message(msg, token_address)
 
     save_json(memory, MEMORY_FILE)
-    
-        #  1h follow-up scan for performance messages
-        for tracked_token, info in tracking.items():
-            ts = info.get("timestamp")
-            if not ts or (now - ts) < 3600 or (now - ts) > 4000:
-                continue  # skip if not around 1h old
 
-            mc_entry = info.get("initial", 0)
-            mc_now = info.get("current", mc_entry)
-            symbol_tracked = info.get("symbol", "N/A")
-
-            if mc_now > mc_entry and "soar" not in info["alerts"]:
-                multiplier = round(mc_now / mc_entry, 1)
-                if multiplier >= 2:
-                    message = f"🚀🚀🚀 ${symbol_tracked} soared by X{multiplier} in an hour since it was called! 🌕"
-                    send_telegram_message(message, tracked_token)
-                    info["alerts"].append("soar")
+    # 1h follow-up scan for performance messages
+    for tracked_token, info in tracking.items():
+        ts = info.get("timestamp")
+        if not ts or (now - ts) < 3600 or (now - ts) > 4000:
+            continue
+        mc_entry = info.get("initial", 0)
+        mc_now = info.get("current", mc_entry)
+        symbol_tracked = info.get("symbol", "N/A")
+        if mc_now > mc_entry and "soar" not in info["alerts"]:
+            multiplier = round(mc_now / mc_entry, 1)
+            if multiplier >= 2:
+                message = f"🚀🚀🚀 ${symbol_tracked} soared by X{multiplier} in an hour since it was called! 🌕"
+                send_telegram_message(message, tracked_token)
+                info["alerts"].append("soar")
 
         save_json(tracking, TRACKING_FILE)
     save_json(wallet_stats, WALLET_STATS_FILE)
@@ -355,78 +352,67 @@ from flask import request
 @app.route(f"/bot/{TELEGRAM_TOKEN}", methods=["POST"])
 def receive_update():
     data = request.get_json()
-    message = data.get("message", {})
-    chat_id = str(message.get("chat", {}).get("id", ""))
-    text = message.get("text", "")
+    if "message" not in data:
+        return jsonify({"status": "ignored"})
 
-    if chat_id != ADMIN_USER_ID:
-        return "Unauthorized"
+    chat_id = data["message"]["chat"]["id"]
+    text = data["message"].get("text", "")
+
+    if str(chat_id) != str(ADMIN_USER_ID):
+        send_telegram_message("🚫 Unauthorized", chat_id)
+        return jsonify({"status": "unauthorized"})
 
     if text == "/scan":
-        send_telegram_message("✅ Scan manuel lancé...", "manual")
-        check_tokens()
-
+        threading.Thread(target=scan_tokens).start()
+        send_telegram_message("🔍 Scan started...", chat_id)
     elif text == "/status":
         try:
-            memory = load_json(MEMORY_FILE)
-            tracking = load_json(TRACKING_FILE)
-            tokens_today = [k for k, v in memory.items() if time.time() - v < 86400]
-            alerts = len(tracking)
-            msg = f"📊 *Status du bot Pump.fun*
-
-- 🔍 Tokens scannés aujourd'hui : {len(tokens_today)}
-- 🚀 Tokens envoyés depuis lancement : {alerts}"
-        except:
-            msg = "❌ Erreur lors de la récupération du status."
-        send_telegram_message(msg, "manual")
-
-    
+            with open("token_tracking.json", "r") as f:
+                tracked = json.load(f)
+            with open("token_memory_ultimate.json", "r") as f:
+                memory = json.load(f)
+            msg = f"📊 *Today's Stats:*\nTokens scanned: {len(memory)}\nAlerts sent: {len(tracked)}"
+        except Exception as e:
+            msg = f"❌ Error while reading stats: {e}"
+        send_telegram_message(msg, chat_id)
     elif text == "/top":
         try:
-            tracking = load_json(TRACKING_FILE)
+            with open("token_tracking.json", "r") as f:
+                tracked = json.load(f)
             scored = []
-            for token, info in tracking.items():
-                mc_entry = info.get("initial", 0)
-                mc_now = info.get("current", mc_entry)
-                symbol = info.get("symbol", "N/A")
-                if mc_now > mc_entry:
-                    gain = round(mc_now / mc_entry, 2)
-                    scored.append((symbol, gain))
+            for token, info in tracked.items():
+                if "history" in info and len(info["history"]) >= 2:
+                    try:
+                        first = info["history"][0]["market_cap"]
+                        latest = info["history"][-1]["market_cap"]
+                        if first > 0:
+                            gain = round(latest / first, 2)
+                            scored.append((token, gain))
+                    except:
+                        continue
             if not scored:
                 msg = "📉 No significant pumps detected yet."
             else:
-                scored = sorted(scored, key=lambda x: x[1], reverse=True)[:10]
-                msg = "🏆 *Top performing tokens after 1h:*
-
-"
-                for i, (symbol, gain) in enumerate(scored, 1):
-                    msg += f"{i}. ${symbol} – x{gain}
-"
-        except:
-            msg = "❌ Error while retrieving performance data."
-        send_telegram_message(msg, "manual")
-
+                try:
+                    scored = sorted(scored, key=lambda x: x[1], reverse=True)[:10]
+                    msg = "🏆 *Top performing tokens after 1h:*\n\n"
+                    for i, (symbol, gain) in enumerate(scored, 1):
+                        msg += f"{i}. ${symbol} - x{gain}\n"
+                except Exception as e:
+                    msg = f"❌ Error while retrieving performance data: {e}"
+            send_telegram_message(msg, chat_id)
+        except Exception as e:
+            send_telegram_message(f"❌ Error during /top: {e}", chat_id)
     elif text == "/help":
         msg = (
-            "🤖 *Commandes disponibles*
-
-"
-            "• `/scan` – Lancer un scan manuel maintenant
-"
-            "• `/status` – Voir combien de tokens ont été scannés et envoyés
-"
-            "• `/help` – Afficher cette aide
-
-"
-            "Le bot détecte automatiquement les tokens Pump.fun prometteurs :
-"
-            "🧠 Smart Wallets • 📈 Bonding Curve • 🛡 Rugcheck • 🐳 Whale Tracking • 📦 Top Holders"
+            "🤖 *Commandes disponibles*\n\n"
+            "• `/scan` – Lancer un scan manuel maintenant\n"
+            "• `/status` – Voir combien de tokens ont été scannés et envoyés\n"
+            "• `/top` – Afficher les meilleures performances 1h après détection\n"
         )
-        send_telegram_message(msg, "manual")
+        send_telegram_message(msg, chat_id)
 
-    return "OK"
-
-
+    return jsonify({"status": "ok"})
 def get_wallet_deployment_stats(wallet_address):
     try:
         url = f"https://api.helius.xyz/v0/addresses/{wallet_address}/transactions?api-key={HELIUS_API_KEY}&limit=20"
