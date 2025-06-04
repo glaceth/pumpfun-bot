@@ -217,7 +217,7 @@ def check_tokens():
         memory[token_address] = now
         tracking[token_address] = {"symbol": symbol, "initial": mc, "current": mc, "alerts": []}
         
-        # 🔁 1h follow-up scan for performance messages
+        #  1h follow-up scan for performance messages
         for tracked_token, info in tracking.items():
             ts = info.get("timestamp")
             if not ts or (now - ts) < 3600 or (now - ts) > 4000:
@@ -288,7 +288,7 @@ msg += ""
 
 msg += f"\n\nPrev Deployed: ${prev_symbol} (${prev_mc:,})"
 msg += ""
-🔁 # of Launches: {launch_count}"
+ # of Launches: {launch_count}"
                 if launch_count > 20:
                     msg += " 🧨 Serial Launcher"
                 elif launch_count == 1:
@@ -298,13 +298,13 @@ msg += ""
         # 🧠 Check if token was already detected earlier and shows new spike
         previous_ts = tracking.get(token_address, {}).get("timestamp")
         if previous_ts and (now - previous_ts > 3600):
-            msg += f"\n\n🔁 Token previously detected {round((now - previous_ts) / 3600, 1)}h ago – new volume spike!"
+            msg += f"\n\n Token previously detected {round((now - previous_ts) / 3600, 1)}h ago – new volume spike!"
 
         
         # 🧠 Check if token was already detected earlier and shows new spike
         previous_ts = tracking.get(token_address, {}).get("timestamp")
         if previous_ts and (now - previous_ts > 3600):
-            msg += f"\n\n🔁 Token previously detected {round((now - previous_ts) / 3600, 1)}h ago – new volume spike!"
+            msg += f"\n\n Token previously detected {round((now - previous_ts) / 3600, 1)}h ago – new volume spike!"
             mc_entry = tracking.get(token_address, {}).get("initial", mc)
             if mc > mc_entry * 2:
                 msg += " 🚀 x2+ pump since first call!"
@@ -315,7 +315,7 @@ msg += ""
 
     save_json(memory, MEMORY_FILE)
     
-        # 🔁 1h follow-up scan for performance messages
+        #  1h follow-up scan for performance messages
         for tracked_token, info in tracking.items():
             ts = info.get("timestamp")
             if not ts or (now - ts) < 3600 or (now - ts) > 4000:
