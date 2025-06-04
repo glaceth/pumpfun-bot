@@ -353,6 +353,7 @@ from flask import request
 @app.route("/bot", methods=["POST"])
     print("✅ /bot route registered")
 def receive_update():
+    print("✅ /bot route registered")
     data = request.get_json()
     print("🔁 Webhook hit:", data)
 
@@ -413,6 +414,7 @@ def receive_update():
     return "OK"
 @app.route("/bot", methods=["POST"])
 def receive_update():
+    print("✅ /bot route registered")
     data = request.get_json()
     if "message" not in data:
         return jsonify({"status": "ignored"})
