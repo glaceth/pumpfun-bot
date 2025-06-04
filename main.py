@@ -1,3 +1,4 @@
+print("🚀 Flask bot starting... loading routes...")
 
 import os
 import time
@@ -350,6 +351,7 @@ from flask import request
 
 
 @app.route("/bot", methods=["POST"])
+    print("✅ /bot route registered")
 def receive_update():
     data = request.get_json()
     print("🔁 Webhook hit:", data)
