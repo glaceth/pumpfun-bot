@@ -8,7 +8,7 @@ from flask import Flask, request
 from threading import Thread
 
 app = Flask(__name__)
-ADMIN_USER_ID = os.getenv("ADMIN_USER_ID")
+ADMIN_USER_ID = os.getenv("CHAT_ID")
 
 with open("/etc/secrets/MORALIS_API") as f:
     API_KEY = f.read().strip()
