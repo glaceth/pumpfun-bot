@@ -287,8 +287,7 @@ def check_tokens():
                 msg += f"
 
 👤 Prev Deployed: ${prev_symbol} (${prev_mc:,})"
-                msg += f"
-🔁 # of Launches: {launch_count}"
+                msg += f"\n🔁 # of Launches: {launch_count}"
                 if launch_count > 20:
                     msg += " 🧨 Serial Launcher"
                 elif launch_count == 1:
