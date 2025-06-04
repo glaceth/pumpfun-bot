@@ -518,3 +518,6 @@ def analyze_token():
     result = ask_gpt(prompt)
     send_telegram_message(f"🤖 *GPT Analysis – ${token_data.get('symbol')}*\n\n{result}", token_address)
     return "Analysis sent"
+
+
+scan_tokens = check_tokens
