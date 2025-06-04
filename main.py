@@ -8,7 +8,7 @@ from flask import Flask, request
 from threading import Thread
 
 app = Flask(__name__)
-ADMIN_USER_ID = os.getenv("CHAT_ID")
+ADMIN_USER_ID = os.getenv("ADMIN_USER_ID")
 
 with open("/etc/secrets/MORALIS_API") as f:
     API_KEY = f.read().strip()
@@ -352,6 +352,66 @@ from flask import request
 @app.route("/bot", methods=["POST"])
 def receive_update():
     data = request.get_json()
+    print("🔁 Webhook hit:", data)
+
+    message = data.get("message", {})
+    chat_id = str(message.get("chat", {}).get("id", ""))
+    text = message.get("text", "")
+
+    print("📨 Message reçu:", text)
+    print("👤 Chat ID:", chat_id)
+
+    if chat_id != ADMIN_USER_ID:
+        print("❌ Unauthorized access")
+        return "Unauthorized", 403
+
+    if text == "/scan":
+        send_telegram_message("✅ Scan manuel lancé...", "manual")
+        check_tokens()
+    elif text == "/status":
+        try:
+            memory = load_json(MEMORY_FILE)
+            tracking = load_json(TRACKING_FILE)
+            tokens_today = [k for k, v in memory.items() if time.time() - v < 86400]
+            alerts = len(tracking)
+            msg = f"📊 *Status du bot Pump.fun*\n\n- 🔍 Tokens scannés aujourd'hui : {len(tokens_today)}\n- 🚀 Tokens envoyés depuis lancement : {alerts}"
+        except:
+            msg = "❌ Erreur lors de la récupération du status."
+        send_telegram_message(msg, "manual")
+    elif text == "/top":
+        try:
+            tracking = load_json(TRACKING_FILE)
+            scored = []
+            for token, info in tracking.items():
+                mc_entry = info.get("initial", 0)
+                mc_now = info.get("current", mc_entry)
+                symbol = info.get("symbol", "N/A")
+                if mc_now > mc_entry:
+                    gain = round(mc_now / mc_entry, 2)
+                    scored.append((symbol, gain))
+            if not scored:
+                msg = "📉 No significant pumps detected yet."
+            else:
+                scored = sorted(scored, key=lambda x: x[1], reverse=True)[:10]
+                msg = "🏆 *Top performing tokens after 1h:*\n\n"
+                for i, (symbol, gain) in enumerate(scored, 1):
+                    msg += f"{i}. ${symbol} - x{gain}\n"
+        except:
+            msg = "❌ Error while retrieving performance data."
+        send_telegram_message(msg, "manual")
+    elif text == "/help":
+        msg = (
+            "🤖 *Commandes disponibles*\n\n"
+            "• `/scan` – Lancer un scan manuel maintenant\n"
+            "• `/status` – Voir combien de tokens ont été scannés et envoyés\n"
+            "• `/top` – Afficher les meilleures performances 1h après détection"
+        )
+        send_telegram_message(msg, "manual")
+
+    return "OK"
+@app.route("/bot", methods=["POST"])
+def receive_update():
+    data = request.get_json()
     if "message" not in data:
         return jsonify({"status": "ignored"})
 
@@ -518,6 +578,5 @@ def analyze_token():
     result = ask_gpt(prompt)
     send_telegram_message(f"🤖 *GPT Analysis – ${token_data.get('symbol')}*\n\n{result}", token_address)
     return "Analysis sent"
-
 
 scan_tokens = check_tokens
