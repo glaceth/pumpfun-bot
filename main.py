@@ -284,10 +284,11 @@ def check_tokens():
         if wallet:
             prev_symbol, launch_count, prev_mc = get_wallet_deployment_stats(wallet)
             if prev_symbol:
-                msg += f"
+msg += ""
 
 👤 Prev Deployed: ${prev_symbol} (${prev_mc:,})"
-                msg += f"\n🔁 # of Launches: {launch_count}"
+msg += ""
+🔁 # of Launches: {launch_count}"
                 if launch_count > 20:
                     msg += " 🧨 Serial Launcher"
                 elif launch_count == 1:
