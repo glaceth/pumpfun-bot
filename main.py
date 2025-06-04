@@ -350,8 +350,6 @@ if __name__ == "__main__":
 from flask import request
 
 
-    print("✅ /bot route registered")
-    print("✅ /bot route registered")
     data = request.get_json()
     print("🔁 Webhook hit:", data)
 
@@ -410,8 +408,6 @@ from flask import request
         send_telegram_message(msg, "manual")
 
     return "OK"
-    print("✅ /bot route registered")
-    print("✅ /bot route registered")
     data = request.get_json()
     if "message" not in data:
         return jsonify({"status": "ignored"})
@@ -580,4 +576,3 @@ def analyze_token():
     send_telegram_message(f"🤖 *GPT Analysis – ${token_data.get('symbol')}*\n\n{result}", token_address)
     return "Analysis sent"
 
-scan_tokens = check_tokens@app.route("/bot", methods=["POST"])def receive_update():    print("✅ /bot route registered")    data = request.get_json()    message = data.get("message", {})    chat_id = str(message.get("chat", {}).get("id", ""))    text = message.get("text", "")    print(f"📨 Message reçu: {text}")    print(f"👤 Chat ID: {chat_id}")    if chat_id != ADMIN_USER_ID:        return "Unauthorized", 403    if text == "/scan":        send_telegram_message("✅ Scan manuel lancé...", "manual")        check_tokens()    elif text == "/status":        try:            memory = load_json(MEMORY_FILE)            tracking = load_json(TRACKING_FILE)            tokens_today = [k for k, v in memory.items() if time.time() - v < 86400]            alerts = len(tracking)            msg = f"📊 *Status du bot Pump.fun*\n\n- 🔍 Tokens scannés aujourd'hui : {len(tokens_today)}\n- 🚀 Tokens envoyés depuis lancement : {alerts}"        except:            msg = "❌ Erreur lors de la récupération du status."        send_telegram_message(msg, "manual")    elif text == "/top":        try:            tracking = load_json(TRACKING_FILE)            scored = []            for token, info in tracking.items():                mc_entry = info.get("initial", 0)                mc_now = info.get("current", mc_entry)                symbol = info.get("symbol", "N/A")                if mc_now > mc_entry:                    gain = round(mc_now / mc_entry, 2)                    scored.append((symbol, gain))            if not scored:                msg = "📉 No significant pumps detected yet."            else:                scored = sorted(scored, key=lambda x: x[1], reverse=True)[:10]                msg = "🏆 *Top performing tokens after 1h:*\n\n"                for i, (symbol, gain) in enumerate(scored, 1):                    msg += f"{i}. ${symbol} – x{gain}\n"        except:            msg = "❌ Error while retrieving performance data."        send_telegram_message(msg, "manual")    elif text == "/help":        msg = (            "🤖 *Commandes disponibles*\n\n"            "• `/scan` – Lancer un scan manuel maintenant\n"            "• `/status` – Voir combien de tokens ont été scannés et envoyés\n"            "• `/top` – Voir les meilleurs gains après 1h\n"            "• `/help` – Afficher cette aide"        )        send_telegram_message(msg, "manual")    return "OK"
