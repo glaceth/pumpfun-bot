@@ -1,11 +1,11 @@
 import openai
 print("✅ Fichier lancé correctement — import os OK")
+import os
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 print("🚀 Flask bot starting... loading routes...")
 
 
 
-import os
 
 import time
 
