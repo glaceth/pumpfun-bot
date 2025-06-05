@@ -17,6 +17,19 @@ from datetime import datetime
 
 from flask import Flask, request, jsonify
 
+def send_simple_message(text, chat_id):
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    payload = {
+        "chat_id": chat_id,
+        "text": text,
+        "parse_mode": "Markdown"
+    }
+    try:
+        requests.post(url, json=payload)
+    except Exception as e:
+        print("❌ Telegram simple message error:", e)
+)
+
 from threading import Thread
 
 
@@ -372,6 +385,7 @@ def check_tokens():
 
 
     for token in data:
+        print(f"🔎 Token found: {token.get('symbol', 'N/A')} — MC: {token.get('fullyDilutedValuation')} — Holders: {token.get('holders')}")
 
         token_address = token.get("tokenAddress")
 
@@ -394,6 +408,7 @@ def check_tokens():
 
 
         if mc < 45000 or lq < 8000 or holders < 80:
+        print("❌ Filtered out due to MC, liquidity or holders")
 
             memory[token_address] = now
 
@@ -404,6 +419,7 @@ def check_tokens():
         rugscore, honeypot, lp_locked = get_rugcheck_data(token_address)
 
         if honeypot:
+        print("⚠️ Honeypot detected, skipping token")
 
             memory[token_address] = now
 
@@ -628,6 +644,7 @@ def check_tokens():
 
 
         send_telegram_message(msg, token_address)
+        print(f"✅ Telegram message sent for token: {symbol}")
 
 
 
@@ -690,13 +707,13 @@ def webhook():
     if text == "/scan":
         username = message["from"].get("username", "")
         if username != ADMIN_USER_ID:
-            send_telegram_message("🚫 Unauthorized", chat_id)
+            send_simple_message("🚫 Unauthorized", chat_id)
             return jsonify({"status": "unauthorized"})
-        send_telegram_message("✅ Scan manuel lancé...", chat_id)
+        send_simple_message("✅ Scan manuel lancé...", chat_id)
         check_tokens()
-        send_telegram_message("📘 Commands available:\n/scan - Manual scan\n/help - This help message", chat_id)
+        send_simple_message("📘 Commands available:\n/scan - Manual scan\n/help - This help message", chat_id)
     else:
-        send_telegram_message("🤖 Unknown command. Try /help", chat_id)
+        send_simple_message("🤖 Unknown command. Try /help", chat_id)
 
     return jsonify({"status": "ok"})
 
