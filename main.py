@@ -759,8 +759,7 @@ def telegram_webhook():
                 gain = round(mc_now / mc_entry, 2)
                 scored.append((symbol, gain))
         scored = sorted(scored, key=lambda x: x[1], reverse=True)[:5]
-        msg = "🏆 *Top performing tokens:*\\n"
-"
+        msg = "🏆 *Top performing tokens:*\n"
         for i, (symbol, gain) in enumerate(scored, 1):
             msg += f"{i}. ${symbol} - x{gain}\n"
         send_telegram_message(msg, "manual")
