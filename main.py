@@ -1,19 +1,11 @@
 import os
-import time
-import json
 import requests
 from flask import Flask, request, jsonify
 
 app = Flask(__name__)
 
 # Chargement des variables d'environnement
-admin_raw = os.getenv("ADMIN_USER_ID")
-if not admin_raw:
-    print("❌ ADMIN_USER_ID is not set in environment.")
-    ADMIN_USER_ID = 0
-else:
-    ADMIN_USER_ID = int(admin_raw)
-
+ADMIN_USER_ID = os.getenv("ADMIN_USER_ID", "Glacesol")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
@@ -38,11 +30,12 @@ def webhook():
 
     message = data["message"]
     chat_id = message["chat"]["id"]
+    username = message["from"].get("username", "")
     text = message.get("text", "")
 
     if text == "/scan":
-        if int(chat_id) != ADMIN_USER_ID:
-            send_telegram_message("🚫 Unauthorized", chat_id)
+        if username != ADMIN_USER_ID:
+            send_telegram_message("🚫 Unauthorized user", chat_id)
             return jsonify({"status": "unauthorized"})
         send_telegram_message("✅ Scan manuel lancé...", chat_id)
     elif text == "/help":
@@ -53,6 +46,6 @@ def webhook():
     return jsonify({"status": "ok"})
 
 if __name__ == "__main__":
-    print("🚀 Flask bot starting... loading routes...")
+    print("🚀 Flask bot starting... checking username based authorization...")
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
