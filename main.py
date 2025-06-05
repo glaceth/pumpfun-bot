@@ -436,7 +436,7 @@ def check_tokens():
 
         memory[token_address] = now
 
-        tracking[token_address] = {"symbol": symbol, "initial": mc, "current": mc, "alerts": []}
+        tracking[token_address] = {"symbol": symbol, "initial": mc, "current": mc, "alerts": [], "timestamp": now}
 
 
 
@@ -674,7 +674,6 @@ def run_flask():
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
 
-    port = int(os.environ.get("PORT", 10000))
 
     
 @app.route('/webhook', methods=['POST'])
@@ -700,7 +699,6 @@ def webhook():
 
     return jsonify({"status": "ok"})
 
-port = int(os.environ.get("PORT", 10000))
 
 
 
@@ -757,52 +755,6 @@ def get_wallet_deployment_stats(wallet_address):
         return None, 0, None
 
 
-@app.route("/webhook", methods=["POST"])
-# Duplicate webhook removed
-    data = request.get_json()
-    if "message" not in data:
-        return jsonify({"status": "ignored"})
-    chat_id = str(data["message"]["chat"]["id"])
-    text = data["message"].get("text", "")
-    username = message["from"].get("username", "")
-    if username != ADMIN_USER_ID:
-        send_telegram_message("🚫 Unauthorized", chat_id)
-        return jsonify({"status": "unauthorized"})
-    if text == "/scan":
-        username = message["from"].get("username", "")
-        if username != ADMIN_USER_ID:
-            send_telegram_message("🚫 Unauthorized", chat_id)
-            return jsonify({"status": "unauthorized"})
-        send_telegram_message("✅ Scan manuel lancé...", chat_id)
-        check_tokens()
-        msg = f"📊 *Status du bot Pump.fun*\n\n- Tokens scannés aujourd'hui : {len(tokens_today)}\n- Tokens trackés : {len(tracking)}"
-        send_telegram_message(msg, "manual")
-    elif text == "/top":
-        tracking = load_json(TRACKING_FILE)
-        scored = []
-        for token, info in tracking.items():
-            mc_entry = info.get("initial", 0)
-            mc_now = info.get("current", mc_entry)
-            symbol = info.get("symbol", "N/A")
-            if mc_now > mc_entry:
-                gain = round(mc_now / mc_entry, 2)
-                scored.append((symbol, gain))
-        scored = sorted(scored, key=lambda x: x[1], reverse=True)[:5]
-        msg = "🏆 *Top performing tokens:*\n"
-        for i, (symbol, gain) in enumerate(scored, 1):
-            msg += f"{i}. ${symbol} - x{gain}\n"
-        send_telegram_message(msg, "manual")
-    elif text == "/help":
-        msg = (
-            "🤖 *Commandes disponibles*\n\n"
-            "• `/scan` – Lancer un scan manuel maintenant\n"
-            "• `/status` – Voir combien de tokens ont été scannés\n"
-            "• `/top` – Top tokens par gain\n"
-        )
-        send_telegram_message(msg, "manual")
-    return jsonify({"status": "ok"})
-
-
 @app.route("/analyze", methods=["GET"])
 def analyze_token():
     token_address = request.args.get("token")
@@ -816,3 +768,16 @@ def analyze_token():
     result = ask_gpt(prompt)
     send_telegram_message(f"🤖 *GPT Analysis – ${token_data.get('symbol')}*\n\n{result}", token_address)
     return "Analysis sent"
+
+
+def ask_gpt(prompt):
+    try:
+        openai.api_key = os.getenv("OPENAI_API_KEY")
+        response = openai.ChatCompletion.create(
+            model="gpt-4",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.5
+        )
+        return response.choices[0].message["content"].strip()
+    except Exception as e:
+        return f"Error calling GPT: {e}"
