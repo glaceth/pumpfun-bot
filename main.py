@@ -407,88 +407,42 @@ def check_tokens():
 
 
         if mc < 45000 or lq < 8000 or holders < 80:
-    print("❌ Filtered out due to MC, liquidity or holders")
+            print("❌ Filtered out due to MC, liquidity or holders")
+rugscore, honeypot, lp_locked = get_rugcheck_data(token_address)
+if honeypot:
+    print("⚠️ Honeypot detected, skipping token")
     memory[token_address] = now
-    continue
-
-            continue
-
-
-
-        rugscore, honeypot, lp_locked = get_rugcheck_data(token_address)
-
-        if honeypot:
-        print("⚠️ Honeypot detected, skipping token")
-
-            memory[token_address] = now
-
-            continue
+else:
+    bonding_percent = get_bonding_curve(token_address)
+    bonding_bar = generate_progress_bar(bonding_percent) if bonding_percent is not None else "N/A"
+    top_total, top_list = get_top_holders(token_address)
+    top_display = " | ".join([f"{p}%" for p in top_list]) if top_list else "N/A"
 
 
 
-        bonding_percent = get_bonding_curve(token_address)
-
-        bonding_bar = generate_progress_bar(bonding_percent) if bonding_percent is not None else "N/A"
-
-
-
-        top_total, top_list = get_top_holders(token_address)
-
-        top_display = " | ".join([f"{p}%" for p in top_list]) if top_list else "N/A"
-
-
-
-        smart_buy, wallet, wallet_stats = get_smart_wallet_buy(token_address, mc, wallet_stats)
-
-        winrates = update_wallet_winrate(wallet_stats, tracking)
-
-        winrate = winrates.get(wallet, None) if wallet else None
-
-
-
-        mentions_name, mentions_ticker = search_twitter_mentions(name, symbol)
-
-
-
-        memory[token_address] = now
-
-        tracking[token_address] = {"symbol": symbol, "initial": mc, "current": mc, "alerts": [], "timestamp": now}
-
-
-
+    mentions_name, mentions_ticker = search_twitter_mentions(name, symbol)
+    memory[token_address] = now
+    tracking[token_address] = {"symbol": symbol, "initial": mc, "current": mc, "alerts": [], "timestamp": now}
         #  1h follow-up scan for performance messages
 
-        for tracked_token, info in tracking.items():
+    for tracked_token, info in tracking.items():
+        ts = info.get("timestamp")
+        if not ts or (now - ts) < 3600 or (now - ts) > 4000:
+            continue  # skip if not around 1h old
+        mc_entry = info.get("initial", 0)
 
-            ts = info.get("timestamp")
+        mc_now = info.get("current", mc_entry)
 
-            if not ts or (now - ts) < 3600 or (now - ts) > 4000:
-
-                continue  # skip if not around 1h old
-
-
-
-            mc_entry = info.get("initial", 0)
-
-            mc_now = info.get("current", mc_entry)
-
-            symbol_tracked = info.get("symbol", "N/A")
+        symbol_tracked = info.get("symbol", "N/A")
 
 
 
-            if mc_now > mc_entry and "soar" not in info["alerts"]:
-
-                multiplier = round(mc_now / mc_entry, 1)
-
-                if multiplier >= 2:
-
-                    message = f"🚀🚀🚀 ${symbol_tracked} soared by X{multiplier} in an hour since it was called! 🌕"
-
-                    send_telegram_message(message, tracked_token)
-
-                    info["alerts"].append("soar")
-
-
+        if mc_now > mc_entry and "soar" not in info["alerts"]:
+            multiplier = round(mc_now / mc_entry, 1)
+            if multiplier >= 2:
+                message = f"🚀🚀🚀 ${symbol_tracked} soared by X{multiplier} in an hour since it was called! 🌕"
+                send_telegram_message(message, tracked_token)
+                info["alerts"].append("soar")
 
         save_json(tracking, TRACKING_FILE)
 
@@ -692,7 +646,7 @@ def run_flask():
     app.run(host="0.0.0.0", port=port)
 
 
-    
+
 @app.route('/webhook', methods=['POST'])
 def webhook():
     data = request.get_json()
@@ -743,7 +697,7 @@ if __name__ == "__main__":
 
 
 
-    
+
 
 def get_wallet_deployment_stats(wallet_address):
     try:
