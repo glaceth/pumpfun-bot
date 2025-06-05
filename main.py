@@ -28,6 +28,7 @@ def send_simple_message(text, chat_id):
         requests.post(url, json=payload)
     except Exception as e:
         print("❌ Telegram simple message error:", e)
+)
 
 from threading import Thread
 
@@ -407,9 +408,9 @@ def check_tokens():
 
 
         if mc < 45000 or lq < 8000 or holders < 80:
-        print("❌ Filtered out due to MC, liquidity or holders")
-
-            memory[token_address] = now
+    print("❌ Filtered out due to MC, liquidity or holders")
+    memory[token_address] = now
+    continue
 
             continue
 
