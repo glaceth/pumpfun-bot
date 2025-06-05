@@ -687,11 +687,11 @@ def webhook():
 
     if text == "/scan":
         username = message["from"].get("username", "")
-    if username != ADMIN_USER_ID:
+        if username != ADMIN_USER_ID:
             send_telegram_message("🚫 Unauthorized", chat_id)
             return jsonify({"status": "unauthorized"})
-            send_telegram_message("✅ Scan manuel lancé...", chat_id)
-    elif text == "/help":
+        send_telegram_message("✅ Scan manuel lancé...", chat_id)
+        check_tokens()
         send_telegram_message("📘 Commands available:\n/scan - Manual scan\n/help - This help message", chat_id)
     else:
         send_telegram_message("🤖 Unknown command. Try /help", chat_id)
@@ -768,12 +768,12 @@ def get_wallet_deployment_stats(wallet_address):
         send_telegram_message("🚫 Unauthorized", chat_id)
         return jsonify({"status": "unauthorized"})
     if text == "/scan":
-            send_telegram_message("✅ Scan manuel lancé...", chat_id)
+        username = message["from"].get("username", "")
+        if username != ADMIN_USER_ID:
+            send_telegram_message("🚫 Unauthorized", chat_id)
+            return jsonify({"status": "unauthorized"})
+        send_telegram_message("✅ Scan manuel lancé...", chat_id)
         check_tokens()
-    elif text == "/status":
-        memory = load_json(MEMORY_FILE)
-        tracking = load_json(TRACKING_FILE)
-        tokens_today = [k for k, v in memory.items() if time.time() - v < 86400]
         msg = f"📊 *Status du bot Pump.fun*\n\n- Tokens scannés aujourd'hui : {len(tokens_today)}\n- Tokens trackés : {len(tracking)}"
         send_telegram_message(msg, "manual")
     elif text == "/top":
