@@ -28,7 +28,6 @@ def send_simple_message(text, chat_id):
         requests.post(url, json=payload)
     except Exception as e:
         print("❌ Telegram simple message error:", e)
-)
 
 from threading import Thread
 
