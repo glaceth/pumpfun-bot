@@ -20,7 +20,7 @@ from threading import Thread
 
 app = Flask(__name__)
 
-ADMIN_USER_ID = os.getenv("ADMIN_USER_ID")
+ADMIN_USER_ID = int(os.getenv("ADMIN_USER_ID")
 
 
 
@@ -684,7 +684,7 @@ def webhook():
     text = message.get("text", "")
 
     if text == "/scan":
-        if chat_id != ADMIN_USER_ID:
+        if int(chat_id) != ADMIN_USER_ID:
             send_telegram_message("🚫 Unauthorized", chat_id)
             return jsonify({"status": "unauthorized"})
         send_telegram_message("✅ Scan manuel lancé...", chat_id)
@@ -760,7 +760,7 @@ def telegram_webhook():
         return jsonify({"status": "ignored"})
     chat_id = str(data["message"]["chat"]["id"])
     text = data["message"].get("text", "")
-    if chat_id != ADMIN_USER_ID:
+    if int(chat_id) != ADMIN_USER_ID:
         send_telegram_message("🚫 Unauthorized", chat_id)
         return jsonify({"status": "unauthorized"})
     if text == "/scan":
