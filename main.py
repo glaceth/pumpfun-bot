@@ -671,6 +671,8 @@ def check_tokens():
 
 
 def run_flask():
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
 
     port = int(os.environ.get("PORT", 10000))
 
@@ -699,7 +701,6 @@ def webhook():
     return jsonify({"status": "ok"})
 
 port = int(os.environ.get("PORT", 10000))
-app.run(host="0.0.0.0", port=port)
 
 
 
