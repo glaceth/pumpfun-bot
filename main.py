@@ -20,7 +20,7 @@ from threading import Thread
 
 app = Flask(__name__)
 
-ADMIN_USER_ID = int(os.getenv("ADMIN_USER_ID")
+ADMIN_USER_ID = int(os.getenv("ADMIN_USER_ID"))
 
 
 
