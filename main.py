@@ -690,7 +690,7 @@ def webhook():
     if username != ADMIN_USER_ID:
             send_telegram_message("🚫 Unauthorized", chat_id)
             return jsonify({"status": "unauthorized"})
-        send_telegram_message("✅ Scan manuel lancé...", chat_id)
+            send_telegram_message("✅ Scan manuel lancé...", chat_id)
     elif text == "/help":
         send_telegram_message("📘 Commands available:\n/scan - Manual scan\n/help - This help message", chat_id)
     else:
@@ -768,7 +768,7 @@ def get_wallet_deployment_stats(wallet_address):
         send_telegram_message("🚫 Unauthorized", chat_id)
         return jsonify({"status": "unauthorized"})
     if text == "/scan":
-        send_telegram_message("✅ Scan manuel lancé...", "manual")
+            send_telegram_message("✅ Scan manuel lancé...", chat_id)
         check_tokens()
     elif text == "/status":
         memory = load_json(MEMORY_FILE)
