@@ -20,7 +20,7 @@ from threading import Thread
 
 app = Flask(__name__)
 
-ADMIN_USER_ID = int(os.getenv("ADMIN_USER_ID", "0"))
+ADMIN_USER_ID = os.getenv("ADMIN_USER_ID")
 
 
 
@@ -672,7 +672,30 @@ def run_flask():
 
     port = int(os.environ.get("PORT", 10000))
 
-    app.run(host="0.0.0.0", port=port)
+    
+@app.route('/webhook', methods=['POST'])
+def webhook():
+    data = request.get_json()
+    if not data or "message" not in data:
+        return jsonify({"status": "ignored"})
+
+    message = data["message"]
+    chat_id = message["chat"]["id"]
+    text = message.get("text", "")
+
+    if text == "/scan":
+        if chat_id != ADMIN_USER_ID:
+            send_telegram_message("🚫 Unauthorized", chat_id)
+            return jsonify({"status": "unauthorized"})
+        send_telegram_message("✅ Scan manuel lancé...", chat_id)
+    elif text == "/help":
+        send_telegram_message("📘 Commands available:\n/scan - Manual scan\n/help - This help message", chat_id)
+    else:
+        send_telegram_message("🤖 Unknown command. Try /help", chat_id)
+
+    return jsonify({"status": "ok"})
+
+app.run(host="0.0.0.0", port=port)
 
 
 
