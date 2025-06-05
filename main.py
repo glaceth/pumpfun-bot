@@ -22,7 +22,7 @@ from threading import Thread
 
 app = Flask(__name__)
 
-ADMIN_USER_ID = int(os.getenv("ADMIN_USER_ID")
+ADMIN_USER_ID = os.getenv("ADMIN_USER_ID", "Glacesol")
 
 
 
@@ -687,7 +687,7 @@ def webhook():
 
     if text == "/scan":
         username = message["from"].get("username", "")
-        if username != ADMIN_USER_ID:
+    if username != ADMIN_USER_ID:
             send_telegram_message("🚫 Unauthorized", chat_id)
             return jsonify({"status": "unauthorized"})
         send_telegram_message("✅ Scan manuel lancé...", chat_id)
@@ -757,14 +757,14 @@ def get_wallet_deployment_stats(wallet_address):
 
 
 @app.route("/webhook", methods=["POST"])
-def telegram_webhook():
+# Duplicate webhook removed
     data = request.get_json()
     if "message" not in data:
         return jsonify({"status": "ignored"})
     chat_id = str(data["message"]["chat"]["id"])
     text = data["message"].get("text", "")
     username = message["from"].get("username", "")
-        if username != ADMIN_USER_ID:
+    if username != ADMIN_USER_ID:
         send_telegram_message("🚫 Unauthorized", chat_id)
         return jsonify({"status": "unauthorized"})
     if text == "/scan":
