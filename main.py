@@ -7,7 +7,7 @@ from flask import Flask, request, jsonify
 from threading import Thread
 from bs4 import BeautifulSoup
 import base58
-from solders.keypair import Keypair  # <-- MODIFICATION ICI
+from solders.keypair import Keypair
 import logging
 
 # === CONFIG LOGGING ===
@@ -41,6 +41,10 @@ TELEGRAM_TOKEN = load_secret("/etc/secrets/TELEGRAM_TOKEN", "TELEGRAM_TOKEN")
 CHAT_ID = load_secret("/etc/secrets/CHAT_ID", "CHAT_ID")
 HELIUS_API_KEY = load_secret("/etc/secrets/HELIUS_API", "HELIUS_API_KEY")
 CALLSTATIC_API = load_secret("/etc/secrets/CALLSTATIC_API", "CALLSTATIC_API")
+
+# Correction ici : secrets Rugcheck gérés comme les autres
+RUGCHECK_SOLANA_PRIVATE_KEY = load_secret("/etc/secrets/RUGCHECK_SOLANA_PRIVATE_KEY", "RUGCHECK_SOLANA_PRIVATE_KEY")
+RUGCHECK_PUBLIC_ADDRESS = load_secret("/etc/secrets/RUGCHECK_PUBLIC_ADDRESS", "RUGCHECK_PUBLIC_ADDRESS")
 
 MEMORY_FILE = "token_memory_ultimate.json"
 TRACKING_FILE = "token_tracking.json"
@@ -95,10 +99,6 @@ def get_scamr_holders(token_address):
     except Exception as e:
         logging.error(f"❌ Scamr error: {e}")
         return "N/A"
-
-# ====== INTEGRATION RUGCHECK AUTH SOLANA ======
-RUGCHECK_SOLANA_PRIVATE_KEY = os.getenv("RUGCHECK_SOLANA_PRIVATE_KEY")
-RUGCHECK_PUBLIC_ADDRESS = os.getenv("RUGCHECK_PUBLIC_ADDRESS")
 
 def rugcheck_login():
     if not RUGCHECK_SOLANA_PRIVATE_KEY or not RUGCHECK_PUBLIC_ADDRESS:
@@ -172,7 +172,6 @@ def get_rugcheck_data(token_address):
     except Exception as e:
         logging.error(f"❌ RugCheck call error: {e}")
         return None, None, None, 0
-# ====== FIN INTEGRATION RUGCHECK AUTH SOLANA ======
 
 def get_bonding_curve(token_address):
     try:
@@ -269,7 +268,6 @@ def send_telegram_message(message, token_address):
         logging.error("❌ Telegram error: %s", e)
 
 def search_twitter_mentions(token_name, ticker):
-    # Placeholder: tu peux améliorer avec une vraie API Twitter/X
     return "N/A"
 
 def generate_progress_bar(percentage, width=20):
@@ -396,7 +394,6 @@ def check_tokens():
 `{token_address}`
 """
 
-        # Wallet deployer history
         if wallet:
             prev_symbol, launch_count, prev_mc = get_wallet_deployment_stats(wallet)
             if prev_symbol:
@@ -423,7 +420,6 @@ def check_tokens():
     save_json(tracking, TRACKING_FILE)
     save_json(wallet_stats, WALLET_STATS_FILE)
 
-    # 1h follow-up scan for performance messages
     for tracked_token, info in tracking.items():
         ts = info.get("timestamp")
         if not ts or (now - ts) < 3600 or (now - ts) > 4000:
@@ -463,7 +459,6 @@ def webhook():
         send_simple_message("🤖 Unknown command. Try /help", chat_id)
     return jsonify({"status": "ok"})
 
-# ==== INTEGRATION OPENAI v1+ AVEC SECRET FILE ====
 from openai import OpenAI
 
 def read_secret_file(path):
@@ -514,7 +509,6 @@ def analyze_token():
     if not token_address:
         return "Token address missing", 400
 
-    # 1/ Cherche dans le tracking
     tracking = load_json(TRACKING_FILE)
     token_data = tracking.get(token_address)
     if token_data:
@@ -524,7 +518,6 @@ def analyze_token():
         volume = token_data.get('volume', 'N/A')
         holders = token_data.get('holders', 'N/A')
     else:
-        # 2/ Sinon, cherche en live chez Moralis
         moralis_url = "https://solana-gateway.moralis.io/token/mainnet/exchange/pumpfun/graduated?limit=100"
         headers = {"Accept": "application/json", "X-API-Key": API_KEY}
         try:
@@ -543,7 +536,6 @@ def analyze_token():
         volume = moralis_data.get('liquidity', 'N/A')
         holders = moralis_data.get('holders', 'N/A')
 
-    # Infos annexes live
     rugscore, honeypot, lp_locked, holders_rug = get_rugcheck_data(token_address)
     bonding_percent = get_bonding_curve(token_address)
     top_total, top_list = get_top_holders(token_address)
@@ -593,7 +585,6 @@ Sois direct, concis, stratégique, comme si tu devais conseiller un trader qui n
     })
 
 def start_loop():
-    # Envoi automatique à 6h et 20h
     current_time = datetime.now()
     if current_time.hour in [6, 20] and current_time.minute < 2:
         send_daily_winners()
