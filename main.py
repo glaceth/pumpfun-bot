@@ -115,7 +115,7 @@ def rugcheck_login():
             kp = Keypair.from_bytes(priv_bytes)
         else:
             raise ValueError("La clé privée doit faire 32 ou 64 bytes")
-        public_key_str = str(kp.public_key)
+        public_key_str = str(kp.pubkey())
         timestamp = int(time.time())
         message_dict = {
             "message": "Sign-in to Rugcheck.xyz",
