@@ -504,6 +504,16 @@ def send_daily_winners():
 
     if top_winners:
         msg = f"🏆 *Top Tokens Since Detection – {now.strftime('%Y-%m-%d')}*\n"
+        # Appel explicite à Helius et BubbleMaps pour récupérer les holders
+        helius_holders = get_helius_holders(token_address)
+        print(f"🔎 Helius holders fetched: {helius_holders}")
+
+        top_display, top_total = get_top_holders(token_address)
+        print(f"📊 Top holders fetched: Total={top_total}, Display={top_display}")
+
+        msg += f"\n👥 *Holders (Helius):* {helius_holders or 'N/A'}"
+        msg += f"\n📦 *Top 10 Holders:* {top_total or 'N/A'}%\n{top_display or 'N/A'}"
+
         for i, (symbol, mult, _) in enumerate(top_winners, 1):
             msg += f"{i}. ${symbol} – x{mult}\n"
         send_simple_message(msg.strip(), CHAT_ID)
