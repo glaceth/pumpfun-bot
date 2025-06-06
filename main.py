@@ -6,7 +6,6 @@ from datetime import datetime
 from flask import Flask, request, jsonify
 from threading import Thread
 from bs4 import BeautifulSoup
-import openai
 
 print("✅ Fichier lancé correctement — import os OK", flush=True)
 
@@ -424,9 +423,16 @@ def analyze_token():
     send_telegram_message(f"🤖 *GPT Analysis – ${token_data.get('symbol')}*\n\n{result}", token_address)
     return "Analysis sent"
 
+# ==== INTEGRATION OPENAI v1+ AVEC VERIFICATION ENV ====
 from openai import OpenAI
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+openai_api_key = os.getenv("OPENAI_API_KEY")
+if not openai_api_key:
+    raise RuntimeError(
+        "❌ ERREUR : la variable d'environnement OPENAI_API_KEY n'est pas définie. "
+        "Vérifie la configuration sur Render, la casse et que le service a bien redémarré !"
+    )
+client = OpenAI(api_key=openai_api_key)
 
 def ask_gpt(prompt):
     try:
