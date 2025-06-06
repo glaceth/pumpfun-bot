@@ -1,38 +1,23 @@
-import openai
-print("✅ Fichier lancé correctement — import os OK")
 import os
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-print("🚀 Flask bot starting... loading routes...")
-
 import time
 import json
 import requests
 from datetime import datetime
 from flask import Flask, request, jsonify
 from threading import Thread
+import openai
+
+print("✅ Fichier lancé correctement — import os OK")
 
 app = Flask(__name__)
 
 ADMIN_USER_ID = os.getenv("ADMIN_USER_ID", "Glacesol")
 
-def send_simple_message(text, chat_id):
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    payload = {
-        "chat_id": chat_id,
-        "text": text,
-        "parse_mode": "Markdown"
-    }
-    try:
-        requests.post(url, json=payload, timeout=10)
-    except Exception as e:
-        print("❌ Telegram simple message error:", e)
-
-# Load secrets
 def load_secret(path, fallback_env=None):
     try:
         with open(path) as f:
             return f.read().strip()
-    except Exception as e:
+    except Exception:
         if fallback_env:
             val = os.getenv(fallback_env)
             if val:
@@ -56,6 +41,18 @@ HEADERS = {
     "X-API-Key": API_KEY,
 }
 
+def send_simple_message(text, chat_id):
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    payload = {
+        "chat_id": chat_id,
+        "text": text,
+        "parse_mode": "Markdown"
+    }
+    try:
+        requests.post(url, json=payload, timeout=10)
+    except Exception as e:
+        print("❌ Telegram simple message error:", e)
+
 def load_json(file):
     if not os.path.exists(file):
         return {}
@@ -65,7 +62,6 @@ def load_json(file):
 def save_json(data, file):
     with open(file, "w") as f:
         json.dump(data, f)
-
 
 def get_rugcheck_data(token_address):
     def call():
@@ -92,8 +88,6 @@ def get_rugcheck_data(token_address):
         return result
     except Exception as e:
         print(f"❌ Rugcheck error: {e}")
-        return None, None, None, 0
-        print("❌ Rugcheck error:", e)
         return None, None, None, 0
 
 def get_bonding_curve(token_address):
@@ -260,7 +254,8 @@ def check_tokens():
             print("❌ Filtered out due to MC, liquidity or holders")
             continue
 
-        rugscore, honeypot, lp_locked = get_rugcheck_data(token_address)
+        # Correction: get_rugcheck_data retourne 4 valeurs, il faut bien tout unpacker
+        rugscore, honeypot, lp_locked, holders = get_rugcheck_data(token_address)
         if honeypot:
             print("⚠️ Honeypot detected, skipping token")
             memory[token_address] = now
@@ -331,7 +326,6 @@ def check_tokens():
                 elif launch_count == 1:
                     msg += " 🆕 First Launch"
 
-        # Check if token was already detected earlier and shows new spike
         previous_ts = tracking.get(token_address, {}).get("timestamp")
         if previous_ts and (now - previous_ts > 3600):
             msg += f"\n\n Token previously detected {round((now - previous_ts) / 3600, 1)}h ago – new volume spike!"
