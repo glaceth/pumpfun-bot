@@ -8,8 +8,14 @@ from threading import Thread
 from bs4 import BeautifulSoup
 import base58
 from solders.keypair import Keypair  # <-- MODIFICATION ICI
+import logging
 
-print("✅ Fichier lancé correctement — import os OK", flush=True)
+# === CONFIG LOGGING ===
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s %(levelname)s %(message)s',
+)
+logging.info("✅ Fichier lancé correctement — import os OK")
 
 app = Flask(__name__)
 
@@ -18,13 +24,16 @@ ADMIN_USER_ID = os.getenv("ADMIN_USER_ID", "Glacesol")
 def load_secret(path, fallback_env=None):
     try:
         with open(path) as f:
-            return f.read().strip()
-    except Exception:
+            secret = f.read().strip()
+            logging.debug(f"Secret chargé depuis {path}")
+            return secret
+    except Exception as e:
         if fallback_env:
             val = os.getenv(fallback_env)
             if val:
+                logging.debug(f"Secret chargé depuis env {fallback_env}")
                 return val
-        print(f"❌ Missing secret {path} and no fallback.")
+        logging.error(f"❌ Missing secret {path} and no fallback ({fallback_env}) : {e}")
         return None
 
 API_KEY = load_secret("/etc/secrets/MORALIS_API", "MORALIS_API")
@@ -53,7 +62,7 @@ def send_simple_message(text, chat_id):
     try:
         requests.post(url, json=payload, timeout=10)
     except Exception as e:
-        print("❌ Telegram simple message error:", e)
+        logging.error("❌ Telegram simple message error: %s", e)
 
 def load_json(file):
     if not os.path.exists(file):
@@ -62,7 +71,7 @@ def load_json(file):
         with open(file, "r", encoding="utf-8") as f:
             return json.load(f)
     except Exception as e:
-        print(f"❌ JSON load error for {file}: {e}")
+        logging.error(f"❌ JSON load error for {file}: {e}")
         return {}
 
 def save_json(data, file):
@@ -70,7 +79,7 @@ def save_json(data, file):
         with open(file, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
     except Exception as e:
-        print(f"❌ JSON save error for {file}: {e}")
+        logging.error(f"❌ JSON save error for {file}: {e}")
 
 def get_scamr_holders(token_address):
     try:
@@ -83,7 +92,8 @@ def get_scamr_holders(token_address):
             if "Score:" in line and any(char.isdigit() for char in line):
                 return line.strip().split("Score:")[-1].strip()
         return "N/A"
-    except Exception:
+    except Exception as e:
+        logging.error(f"❌ Scamr error: {e}")
         return "N/A"
 
 # ====== INTEGRATION RUGCHECK AUTH SOLANA ======
@@ -92,10 +102,9 @@ RUGCHECK_PUBLIC_ADDRESS = os.getenv("RUGCHECK_PUBLIC_ADDRESS")
 
 def rugcheck_login():
     if not RUGCHECK_SOLANA_PRIVATE_KEY or not RUGCHECK_PUBLIC_ADDRESS:
-        print("❌ RUGCHECK secrets missing")
+        logging.error("❌ RUGCHECK secrets missing (RUGCHECK_SOLANA_PRIVATE_KEY or RUGCHECK_PUBLIC_ADDRESS absent)")
         return None
     try:
-        # Clé privée en bytes (hex ou base58)
         try:
             priv_bytes = bytes.fromhex(RUGCHECK_SOLANA_PRIVATE_KEY)
         except Exception:
@@ -108,36 +117,32 @@ def rugcheck_login():
             "publicKey": public_key_str,
             "timestamp": timestamp
         }
-        # Concatène comme recommandé
         to_sign = f"{message_dict['message']}|{message_dict['publicKey']}|{message_dict['timestamp']}".encode()
         signature = kp.sign(to_sign)
         signature_bytes = list(signature.signature)
         payload = {
             "message": message_dict,
-            "signature": {
-                "data": signature_bytes,
-                "type": "ed25519"
-            },
+            "signature": {"data": signature_bytes, "type": "ed25519"},
             "wallet": public_key_str
         }
         url = "https://api.rugcheck.xyz/v1/auth/login"
         resp = requests.post(url, json=payload, timeout=10)
         if resp.status_code == 200:
             token = resp.json().get("token")
-            print("✅ RugCheck login OK")
+            logging.info("✅ RugCheck login OK")
             return token
         else:
-            print(f"❌ RugCheck login failed: {resp.status_code} {resp.text}")
+            logging.error(f"❌ RugCheck login failed: {resp.status_code} {resp.text}")
             return None
     except Exception as e:
-        print(f"❌ RugCheck login error: {e}")
+        logging.exception(f"❌ RugCheck login error: {e}")
         return None
 
 def get_rugcheck_data(token_address):
     def call():
         token = rugcheck_login()
         if not token:
-            print("❌ No RugCheck token")
+            logging.error("❌ No RugCheck token")
             return None, None, None, 0
         url = f"https://api.rugcheck.xyz/v1/tokens/{token_address}/report/summary"
         headers = {"Authorization": f"Bearer {token}"}
@@ -155,16 +160,17 @@ def get_rugcheck_data(token_address):
                 holders = data.get("holders", 0) or 0
                 return score, honeypot, lp_locked, holders
             else:
-                print(f"❌ RugCheck data error: {response.status_code} {response.text}")
+                logging.error(f"❌ RugCheck data error: {response.status_code} {response.text}")
         except Exception as e:
-            print(f"❌ RugCheck API error: {e}")
+            logging.error(f"❌ RugCheck API error: {e}")
         return None, None, None, 0
     try:
         result = call()
         if result == (None, None, None, 0):
             result = call()
         return result
-    except Exception:
+    except Exception as e:
+        logging.error(f"❌ RugCheck call error: {e}")
         return None, None, None, 0
 # ====== FIN INTEGRATION RUGCHECK AUTH SOLANA ======
 
@@ -176,7 +182,8 @@ def get_bonding_curve(token_address):
         data = response.json()
         percentage = float(data.get("bondingCurve", {}).get("percentageComplete", 0.0)) * 100
         return round(percentage, 2)
-    except Exception:
+    except Exception as e:
+        logging.error(f"❌ Bonding curve error: {e}")
         return None
 
 def get_top_holders(token_address):
@@ -188,7 +195,8 @@ def get_top_holders(token_address):
         percentages = [round(h.get("share", 0) * 100, 2) for h in holders]
         total = round(sum(percentages), 2)
         return total, percentages
-    except Exception:
+    except Exception as e:
+        logging.error(f"❌ Top holders error: {e}")
         return None, []
 
 def get_smart_wallet_buy(token_address, current_mc, wallet_stats):
@@ -213,7 +221,7 @@ def get_smart_wallet_buy(token_address, current_mc, wallet_stats):
                 })
                 return amount_formatted, to_wallet, wallet_stats
     except Exception as e:
-        print("❌ Helius Error:", e)
+        logging.error("❌ Helius Error: %s", e)
     return None, None, wallet_stats
 
 def update_wallet_winrate(wallet_stats, tracking):
@@ -258,7 +266,7 @@ def send_telegram_message(message, token_address):
         requests.post(url, json=payload, timeout=10)
         time.sleep(2)
     except Exception as e:
-        print("❌ Telegram error:", e)
+        logging.error("❌ Telegram error: %s", e)
 
 def search_twitter_mentions(token_name, ticker):
     # Placeholder: tu peux améliorer avec une vraie API Twitter/X
@@ -293,16 +301,16 @@ def get_wallet_deployment_stats(wallet_address):
         last_mc = cs_data.get("fullyDilutedValuation", 0)
         return last_symbol, len(deployed_tokens), int(last_mc)
     except Exception as e:
-        print("❌ Wallet deployer stats error:", e)
+        logging.error("❌ Wallet deployer stats error: %s", e)
         return None, 0, None
 
 def check_tokens():
-    print("🔍 Checking tokens...")
+    logging.info("🔍 Checking tokens...")
     try:
         response = requests.get(API_URL, headers=HEADERS, timeout=20)
         data = response.json().get("result", [])
     except Exception as e:
-        print("❌ Moralis API error:", e)
+        logging.error("❌ Moralis API error: %s", e)
         time.sleep(300)
         return
     memory = load_json(MEMORY_FILE)
@@ -311,7 +319,7 @@ def check_tokens():
     now = time.time()
 
     for token in data:
-        print(f"🔎 Token found: {token.get('symbol', 'N/A')} — MC: {token.get('fullyDilutedValuation')} — Holders: {token.get('holders')}")
+        logging.info(f"🔎 Token found: {token.get('symbol', 'N/A')} — MC: {token.get('fullyDilutedValuation')} — Holders: {token.get('holders')}")
         token_address = token.get("tokenAddress")
         if not token_address:
             continue
@@ -322,18 +330,18 @@ def check_tokens():
         rugscore, honeypot, lp_locked, holders_rug = get_rugcheck_data(token_address)
         holders = holders_rug or token.get('holders', 0)
         if mc < 45000 or lq < 8000 or (holders != 0 and holders < 80):
-            print("❌ Filtered out due to MC, liquidity or holders")
+            logging.info("❌ Filtered out due to MC, liquidity or holders")
             continue
         if honeypot:
-            print("⚠️ Honeypot detected, skipping token")
+            logging.info("⚠️ Honeypot detected, skipping token")
             memory[token_address] = now
             continue
         if not lp_locked:
-            print("❌ LP not locked – token skipped")
+            logging.info("❌ LP not locked – token skipped")
             memory[token_address] = now
             continue
         if rugscore is not None and rugscore < 40:
-            print(f"❌ Rugscore too low ({rugscore}) – skipping token")
+            logging.info(f"❌ Rugscore too low ({rugscore}) – skipping token")
             memory[token_address] = now
             continue
 
@@ -409,7 +417,7 @@ def check_tokens():
                 msg += " 📈 +50% since first call!"
 
         send_telegram_message(msg, token_address)
-        print(f"✅ Telegram message sent for token: {symbol}")
+        logging.info(f"✅ Telegram message sent for token: {symbol}")
 
     save_json(memory, MEMORY_FILE)
     save_json(tracking, TRACKING_FILE)
@@ -463,11 +471,11 @@ def read_secret_file(path):
         with open(path) as f:
             return f.read().strip()
     except Exception as e:
-        print(f"Erreur lecture secret file {path} :", e)
+        logging.error(f"Erreur lecture secret file {path} : {e}")
         return None
 
 openai_api_key = read_secret_file("/etc/secrets/OPENAI_API_KEY")
-print("DEBUG OPENAI_API_KEY (file):", repr(openai_api_key))
+logging.debug("DEBUG OPENAI_API_KEY (file): %r", openai_api_key)
 if not openai_api_key:
     raise RuntimeError(
         "❌ ERREUR : la clé OpenAI n'est pas trouvée dans le secret file /etc/secrets/OPENAI_API_KEY. "
@@ -497,6 +505,7 @@ def ask_gpt(prompt):
         )
         return response.choices[0].message.content.strip()
     except Exception as e:
+        logging.error("Error calling GPT: %s", e)
         return f"Error calling GPT: {e}"
 
 @app.route("/analyze", methods=["GET"])
@@ -612,5 +621,6 @@ def send_daily_winners():
         send_simple_message(msg.strip(), CHAT_ID)
 
 if __name__ == "__main__":
+    logging.info(f"Bot lancé depuis : {os.getcwd()}")
     Thread(target=run_flask, daemon=True).start()
     start_loop()
