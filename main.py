@@ -6,68 +6,14 @@ from datetime import datetime
 from flask import Flask, request, jsonify
 from threading import Thread
 from bs4 import BeautifulSoup
+import base58
+from solana.keypair import Keypair
 
 print("✅ Fichier lancé correctement — import os OK", flush=True)
 
 app = Flask(__name__)
 
 ADMIN_USER_ID = os.getenv("ADMIN_USER_ID", "Glacesol")
-
-JWT_FILE = "rugcheck_jwt.json"
-
-def store_jwt_token(token):
-    with open(JWT_FILE, "w") as f:
-        json.dump({"token": token, "timestamp": time.time()}, f)
-
-def load_jwt_token():
-    try:
-        with open(JWT_FILE, "r") as f:
-            data = json.load(f)
-            token = data.get("token")
-            timestamp = data.get("timestamp", 0)
-            # 6h = 21600s
-            if time.time() - timestamp < 21600:
-                return token
-    except Exception:
-        pass
-    return None
-
-def get_rugcheck_jwt():
-    existing = load_jwt_token()
-    if existing:
-        return existing
-
-    message = "Login to RugCheck as a signed solana message"
-    private_key_hex = os.getenv("SOLANA_PRIVATE_KEY")
-    public_address = os.getenv("PUBLIC_ADDRESS")
-
-    if not private_key_hex or not public_address:
-        print("❌ Clé privée ou adresse publique manquante dans les secrets.")
-        return None
-
-    try:
-        private_key_bytes = bytes.fromhex(private_key_hex[:64])
-        signing_key = SigningKey(private_key_bytes)
-        signed = signing_key.sign(message.encode())
-        signature_b64 = base64.b64encode(signed.signature).decode()
-
-        payload = {
-            "message": message,
-            "publicKey": public_address,
-            "signature": signature_b64,
-            "client": "bot-script"
-        }
-
-        response = requests.post("https://api.rugcheck.xyz/v1/auth/login/solana", json=payload)
-        response.raise_for_status()
-        jwt_token = response.json().get("token")
-        print("✅ Nouveau JWT token récupéré.")
-        store_jwt_token(jwt_token)
-        return jwt_token
-    except Exception as e:
-        print("❌ Erreur lors de la récupération du token :", e)
-        return None
-
 
 def load_secret(path, fallback_env=None):
     try:
@@ -140,15 +86,61 @@ def get_scamr_holders(token_address):
     except Exception:
         return "N/A"
 
+# ====== INTEGRATION RUGCHECK AUTH SOLANA ======
+RUGCHECK_SOLANA_PRIVATE_KEY = os.getenv("RUGCHECK_SOLANA_PRIVATE_KEY")
+RUGCHECK_PUBLIC_ADDRESS = os.getenv("RUGCHECK_PUBLIC_ADDRESS")
+
+def rugcheck_login():
+    if not RUGCHECK_SOLANA_PRIVATE_KEY or not RUGCHECK_PUBLIC_ADDRESS:
+        print("❌ RUGCHECK secrets missing")
+        return None
+    try:
+        # Clé privée en bytes (hex ou base58)
+        try:
+            priv_bytes = bytes.fromhex(RUGCHECK_SOLANA_PRIVATE_KEY)
+        except Exception:
+            priv_bytes = base58.b58decode(RUGCHECK_SOLANA_PRIVATE_KEY)
+        kp = Keypair.from_secret_key(priv_bytes)
+        public_key_str = str(kp.public_key)
+        timestamp = int(time.time())
+        message_dict = {
+            "message": "Sign-in to Rugcheck.xyz",
+            "publicKey": public_key_str,
+            "timestamp": timestamp
+        }
+        # Concatène comme recommandé
+        to_sign = f"{message_dict['message']}|{message_dict['publicKey']}|{message_dict['timestamp']}".encode()
+        signature = kp.sign(to_sign)
+        signature_bytes = list(signature.signature)
+        payload = {
+            "message": message_dict,
+            "signature": {
+                "data": signature_bytes,
+                "type": "ed25519"
+            },
+            "wallet": public_key_str
+        }
+        url = "https://api.rugcheck.xyz/v1/auth/login"
+        resp = requests.post(url, json=payload, timeout=10)
+        if resp.status_code == 200:
+            token = resp.json().get("token")
+            print("✅ RugCheck login OK")
+            return token
+        else:
+            print(f"❌ RugCheck login failed: {resp.status_code} {resp.text}")
+            return None
+    except Exception as e:
+        print(f"❌ RugCheck login error: {e}")
+        return None
 
 def get_rugcheck_data(token_address):
-    jwt_token = get_rugcheck_jwt()
-    if not jwt_token:
-        return None, None, None, 0
-
     def call():
+        token = rugcheck_login()
+        if not token:
+            print("❌ No RugCheck token")
+            return None, None, None, 0
         url = f"https://api.rugcheck.xyz/v1/tokens/{token_address}/report/summary"
-        headers = {"Authorization": f"Bearer {jwt_token}", "Accept": "application/json"}
+        headers = {"Authorization": f"Bearer {token}"}
         try:
             response = requests.get(url, headers=headers, timeout=2.5)
             if response.status_code == 200 and response.text.strip():
@@ -162,10 +154,11 @@ def get_rugcheck_data(token_address):
                 )
                 holders = data.get("holders", 0) or 0
                 return score, honeypot, lp_locked, holders
-        except Exception:
-            pass
+            else:
+                print(f"❌ RugCheck data error: {response.status_code} {response.text}")
+        except Exception as e:
+            print(f"❌ RugCheck API error: {e}")
         return None, None, None, 0
-
     try:
         result = call()
         if result == (None, None, None, 0):
@@ -173,9 +166,7 @@ def get_rugcheck_data(token_address):
         return result
     except Exception:
         return None, None, None, 0
-
-    except Exception:
-        return None, None, None, 0
+# ====== FIN INTEGRATION RUGCHECK AUTH SOLANA ======
 
 def get_bonding_curve(token_address):
     try:
@@ -487,13 +478,13 @@ client = OpenAI(api_key=openai_api_key)
 def ask_gpt(prompt):
     try:
         response = client.chat.completions.create(
-            model="gpt-4",
+            model="gpt-3.5-turbo",
             messages=[
                 {
                     "role": "system",
                     "content": (
                         "Tu es un expert en trading crypto spécialisé dans les tokens ultra-récents sur Pump.fun (Solana). "
-                        "Tu as l'expérience de TendersAlt : tu appliques des stratégies simples, sans émotions, en t'appuyant sur des probabilités, des setups Fibonacci, et l'observation des comportements des whales. Tu ne FOMO jamais. "
+                        "Tu as l'expérience de TendersAlt : tu appliques des stratégies simples, sans émotions, en t'appuyant sur des probabilités, des setups Fibonacci, et l'observation des patterns. "
                         "Analyse objectivement, sois direct, concis, stratégique."
                     )
                 },
@@ -554,7 +545,7 @@ def analyze_token():
     top5_distribution = " | ".join([f"{p}%" for p in (top_list[:5] if top_list else [])]) or "N/A"
 
     prompt = f"""
-Tu es un expert en trading crypto spécialisé dans les tokens ultra-récents sur Pump.fun (Solana). Tu as l'expérience de TendersAlt : tu appliques des stratégies simples, sans émotions, en t'appuyant sur des probabilités, des setups Fibonacci, et l'observation des comportements des whales. Tu ne FOMO jamais.
+Tu es un expert en trading crypto spécialisé dans les tokens ultra-récents sur Pump.fun (Solana). Tu as l'expérience de TendersAlt : tu appliques des stratégies simples, sans émotions, en t'appuyant sur des probabilités, des setups Fibonacci, et l'observation des patterns.
 
 Analyse ce token objectivement en te basant sur les infos suivantes :
 
@@ -623,68 +614,3 @@ def send_daily_winners():
 if __name__ == "__main__":
     Thread(target=run_flask, daemon=True).start()
     start_loop()
-
-
-
-def build_message(data):
-    token_address = data.get("address", "N/A")
-    ticker = data.get("symbol", "N/A")
-    name = data.get("name", "N/A")
-    market_cap = f"${int(data.get('market_cap', 0)):,}"
-    volume = f"${int(data.get('volume_1h', 0)):,}"
-    holders = data.get("holders", "N/A")
-
-    rug = get_rugcheck_data(token_address)
-    if rug:
-        burned = "✅" if rug.get("liquidity_burned") else "❌"
-        freeze = "✅" if rug.get("freeze_authority_removed") else "❌"
-        mint = "✅" if rug.get("mint_authority_revoked") else "❌"
-        lp_locked = "🔒" if rug.get("lp_locked") else "❌"
-        honeypot = "No" if not rug.get("is_honeypot") else "Yes"
-        rugscore = rug.get("rug_score", "N/A")
-        holders_top = rug.get("top_holders", [])[:5]
-    else:
-        burned = freeze = mint = lp_locked = rugscore = "N/A"
-        honeypot = "Unknown"
-        holders_top = []
-
-    top_holders_str = ""
-    for i, h in enumerate(holders_top):
-        percent = h.get("percent", 0)
-        top_holders_str += f"{i+1}. {percent:.1f}%\n"
-
-    return f"""🚨 New Token Detected!
-
-💰 Name: {name}  
-🪙 Symbol: ${ticker}  
-📈 Market Cap: {market_cap}  
-📊 Volume (1h): {volume}  
-👥 Holders: {holders}
-
-🛡️ Security Check (RugCheck)
-- {burned} Liquidity Burned  
-- {freeze} Freeze Authority Removed  
-- {mint} Mint Authority Revoked  
-- {lp_locked} LP Locked  
-- 🔥 RugScore: {rugscore}/100  
-- ❌ Honeypot: {honeypot}
-
-📊 Top Holders:
-{top_holders_str}
-
-🧠 Insider Graph:
-[Voir le graphe BubbleMap](https://app.rugcheck.xyz/token/{token_address}/insiders)
-
-🔎 Mentions X: [🔗 Rechercher ${ticker} sur X](https://twitter.com/search?q=%24{ticker}&src=typed_query)
-
-📍 Liens Utiles:
-- 🌐 Pump.fun: https://pump.fun/{token_address}
-- 🧪 Scam Check: https://ai.scamr.xyz/token/{token_address}
-- 🔍 RugCheck: https://app.rugcheck.xyz/token/{token_address}
-- 🗺️ BubbleMaps: https://app.bubblemaps.io/sol/token/{token_address}
-- 📊 Axiom (Ref): https://axiom.trade/@glace
-
-🧬 Adresse du Token: `{token_address}`
-
-🤖 Analyze with AI (button)
-""" 
