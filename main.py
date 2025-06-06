@@ -130,7 +130,7 @@ def rugcheck_login():
             "signature": {"data": signature_bytes, "type": "ed25519"},
             "wallet": public_key_str
         }
-        url = "https://api.rugcheck.xyz/v1/auth/login"
+        url = "https://api.rugcheck.xyz/auth/login/solana"
         resp = requests.post(url, json=payload, timeout=10)
         if resp.status_code == 200:
             token = resp.json().get("token")
