@@ -421,7 +421,7 @@ client = OpenAI(api_key=openai_api_key)
 def ask_gpt(prompt):
     try:
         response = client.chat.completions.create(
-            model="gpt-4",
+            model="gpt-4o",
             messages=[
                 {
                     "role": "system",
