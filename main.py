@@ -244,7 +244,7 @@ def check_tokens():
         mc = float(token.get("fullyDilutedValuation") or 0)
         lq = float(token.get("liquidity") or 0)
         rugscore, honeypot, lp_locked, holders = get_rugcheck_data(token_address)
-        if mc < 45000 or lq < 8000 or holders < 80:
+        if mc < 45000 or lq < 8000 or (holders != 0 and holders < 80):
             print("❌ Filtered out due to MC, liquidity or holders")
             continue
 
