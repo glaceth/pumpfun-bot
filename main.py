@@ -7,7 +7,7 @@ from flask import Flask, request, jsonify
 from threading import Thread
 from bs4 import BeautifulSoup
 import base58
-from solana.keypair import Keypair
+from solders.keypair import Keypair  # <-- MODIFICATION ICI
 
 print("✅ Fichier lancé correctement — import os OK", flush=True)
 
@@ -484,7 +484,7 @@ def ask_gpt(prompt):
                     "role": "system",
                     "content": (
                         "Tu es un expert en trading crypto spécialisé dans les tokens ultra-récents sur Pump.fun (Solana). "
-                        "Tu as l'expérience de TendersAlt : tu appliques des stratégies simples, sans émotions, en t'appuyant sur des probabilités, des setups Fibonacci, et l'observation des patterns. "
+                        "Tu as l'expérience de TendersAlt : tu appliques des stratégies simples, sans émotions, en t'appuyant sur des probabilités, des setups Fibonacci, et l'observation des volumes. "
                         "Analyse objectivement, sois direct, concis, stratégique."
                     )
                 },
@@ -545,7 +545,7 @@ def analyze_token():
     top5_distribution = " | ".join([f"{p}%" for p in (top_list[:5] if top_list else [])]) or "N/A"
 
     prompt = f"""
-Tu es un expert en trading crypto spécialisé dans les tokens ultra-récents sur Pump.fun (Solana). Tu as l'expérience de TendersAlt : tu appliques des stratégies simples, sans émotions, en t'appuyant sur des probabilités, des setups Fibonacci, et l'observation des patterns.
+Tu es un expert en trading crypto spécialisé dans les tokens ultra-récents sur Pump.fun (Solana). Tu as l'expérience de TendersAlt : tu appliques des stratégies simples, sans émotions, en t'appuyant sur des probabilités, des setups Fibonacci, et l'observation des volumes.
 
 Analyse ce token objectivement en te basant sur les infos suivantes :
 
