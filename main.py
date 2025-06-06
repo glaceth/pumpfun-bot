@@ -1,4 +1,9 @@
+import openai
+print("✅ Fichier lancé correctement — import os OK")
 import os
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+print("🚀 Flask bot starting... loading routes...")
+
 import time
 import json
 import requests
@@ -6,14 +11,28 @@ from datetime import datetime
 from flask import Flask, request, jsonify
 from threading import Thread
 
-print("✅ Fichier lancé correctement — import os OK")
+app = Flask(__name__)
 
-# Chargement des clés et secrets
+ADMIN_USER_ID = os.getenv("ADMIN_USER_ID", "Glacesol")
+
+def send_simple_message(text, chat_id):
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    payload = {
+        "chat_id": chat_id,
+        "text": text,
+        "parse_mode": "Markdown"
+    }
+    try:
+        requests.post(url, json=payload, timeout=10)
+    except Exception as e:
+        print("❌ Telegram simple message error:", e)
+
+# Load secrets
 def load_secret(path, fallback_env=None):
     try:
         with open(path) as f:
             return f.read().strip()
-    except Exception:
+    except Exception as e:
         if fallback_env:
             val = os.getenv(fallback_env)
             if val:
@@ -26,22 +45,6 @@ TELEGRAM_TOKEN = load_secret("/etc/secrets/TELEGRAM_TOKEN", "TELEGRAM_TOKEN")
 CHAT_ID = load_secret("/etc/secrets/CHAT_ID", "CHAT_ID")
 HELIUS_API_KEY = load_secret("/etc/secrets/HELIUS_API", "HELIUS_API_KEY")
 CALLSTATIC_API = load_secret("/etc/secrets/CALLSTATIC_API", "CALLSTATIC_API")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-ADMIN_USER_ID = os.getenv("ADMIN_USER_ID", "Glacesol")
-
-# Vérification des secrets obligatoires
-required_vars = {
-    "API_KEY": API_KEY,
-    "TELEGRAM_TOKEN": TELEGRAM_TOKEN,
-    "CHAT_ID": CHAT_ID,
-    "HELIUS_API_KEY": HELIUS_API_KEY,
-    "CALLSTATIC_API": CALLSTATIC_API,
-}
-missing_keys = [k for k, v in required_vars.items() if not v]
-if missing_keys:
-    raise RuntimeError(f"❌ Les variables suivantes sont manquantes: {', '.join(missing_keys)}")
-
-app = Flask(__name__)
 
 MEMORY_FILE = "token_memory_ultimate.json"
 TRACKING_FILE = "token_tracking.json"
@@ -63,31 +66,34 @@ def save_json(data, file):
     with open(file, "w") as f:
         json.dump(data, f)
 
-def send_simple_message(text, chat_id):
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    payload = {
-        "chat_id": chat_id,
-        "text": text,
-        "parse_mode": "Markdown"
-    }
-    try:
-        requests.post(url, json=payload, timeout=10)
-    except Exception as e:
-        print("❌ Telegram simple message error:", e)
 
 def get_rugcheck_data(token_address):
-    try:
+    def call():
         url = f"https://api.rugcheck.xyz/v1/tokens/{token_address}/report/summary"
-        response = requests.get(url, timeout=4)
-        data = response.json()
-        score = data.get("score_normalised")
-        risks = data.get("risks", [])
-        honeypot = any("honeypot" in r["name"].lower() for r in risks)
-        lp_locked = all("liquidity" not in r["name"].lower() or "not" not in r["description"].lower() for r in risks)
-        holders = data.get("holders", 0) or 0
-        return score, honeypot, lp_locked, holders
+        response = requests.get(url, timeout=2.5)
+        if response.status_code == 200 and response.text.strip():
+            data = response.json()
+            score = data.get("score_normalised")
+            risks = data.get("risks", [])
+            honeypot = any("honeypot" in r["name"].lower() for r in risks)
+            lp_locked = all("liquidity" not in r["name"].lower() or "not" not in r["description"].lower() for r in risks)
+            holders = data.get("holders", 0) or 0
+            return score, honeypot, lp_locked, holders
+        else:
+            return None
+
+    try:
+        result = call()
+        if result is None:
+            print("⚠️ Rugcheck failed first try, retrying...")
+            result = call()
+        if result is None:
+            raise Exception("Rugcheck empty after retry")
+        return result
     except Exception as e:
         print(f"❌ Rugcheck error: {e}")
+        return None, None, None, 0
+        print("❌ Rugcheck error:", e)
         return None, None, None, 0
 
 def get_bonding_curve(token_address):
@@ -145,7 +151,7 @@ def update_wallet_winrate(wallet_stats, tracking):
     for wallet, data in wallet_stats.items():
         wins = 0
         total = 0
-        for entry in data.get("buys", []):
+        for entry in data["buys"]:
             token = entry["token"]
             mc_entry = entry["mc_entry"]
             mc_now = tracking.get(token, {}).get("current", mc_entry)
@@ -185,7 +191,6 @@ def send_telegram_message(message, token_address):
         print("❌ Telegram error:", e)
 
 def search_twitter_mentions(token_name, ticker):
-    # À ADAPTER/CORRIGER avec un vrai endpoint Twitter/X si possible
     try:
         name_query = requests.get(f"https://api.x.com/search?q={token_name}", timeout=10).text
         ticker_query = requests.get(f"https://api.x.com/search?q=%24{ticker}", timeout=10).text
@@ -250,13 +255,12 @@ def check_tokens():
         symbol = token.get("symbol", "N/A")
         mc = float(token.get("fullyDilutedValuation") or 0)
         lq = float(token.get("liquidity") or 0)
-
-        # Un SEUL appel à get_rugcheck_data ici
         rugscore, honeypot, lp_locked, holders = get_rugcheck_data(token_address)
         if mc < 45000 or lq < 8000 or (holders != 0 and holders < 80):
             print("❌ Filtered out due to MC, liquidity or holders")
             continue
 
+        rugscore, honeypot, lp_locked = get_rugcheck_data(token_address)
         if honeypot:
             print("⚠️ Honeypot detected, skipping token")
             memory[token_address] = now
@@ -366,12 +370,6 @@ def run_flask():
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
-    # Sécurité simple : vérifier un token secret dans l'entête (à améliorer selon ton besoin)
-    secret_header = request.headers.get("X-Webhook-Secret")
-    expected_secret = os.getenv("WEBHOOK_SECRET")
-    if expected_secret and secret_header != expected_secret:
-        return jsonify({"status": "forbidden"}), 403
-
     data = request.get_json()
     if not data or "message" not in data:
         return jsonify({"status": "ignored"})
@@ -409,8 +407,7 @@ def analyze_token():
 
 def ask_gpt(prompt):
     try:
-        import openai
-        openai.api_key = OPENAI_API_KEY
+        openai.api_key = os.getenv("OPENAI_API_KEY")
         response = openai.ChatCompletion.create(
             model="gpt-4",
             messages=[{"role": "user", "content": prompt}],
