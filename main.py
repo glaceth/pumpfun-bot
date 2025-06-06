@@ -424,8 +424,32 @@ def analyze_token():
     send_telegram_message(f"🤖 *GPT Analysis – ${token_data.get('symbol')}*\n\n{result}", token_address)
     return "Analysis sent"
 
+from openai import OpenAI
+
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
 def ask_gpt(prompt):
     try:
+        response = client.chat.completions.create(
+            model="gpt-4",
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a professional crypto trader with deep knowledge of meme coins, "
+                        "rugpull detection, and pump.fun dynamics. Be concise and strategic."
+                    )
+                },
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ],
+            temperature=0.4
+        )
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        return f"Error calling GPT: {e}"    try:
         openai.api_key = os.getenv("OPENAI_API_KEY")
         response = openai.ChatCompletion.create(
             model="gpt-4",
