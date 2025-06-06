@@ -1,5 +1,5 @@
 base58
-solana
+solana>=0.18.0
 requests
 flask
 beautifulsoup4
