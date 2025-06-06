@@ -264,6 +264,11 @@ def check_tokens():
             print("❌ LP not locked – token skipped")
             memory[token_address] = now
             continue
+        if rugscore is not None and rugscore < 40:
+            print(f"❌ Rugscore too low ({rugscore}) – skipping token")
+            memory[token_address] = now
+            continue
+
 
         bonding_percent = get_bonding_curve(token_address)
         bonding_bar = generate_progress_bar(bonding_percent) if bonding_percent is not None else "N/A"
