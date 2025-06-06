@@ -1,5 +1,6 @@
 base58
-solana>=0.18.0
+solana>=0.36.0
+solders>=0.18.0
 requests
 flask
 beautifulsoup4
