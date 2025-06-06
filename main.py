@@ -260,6 +260,10 @@ def check_tokens():
             print("⚠️ Honeypot detected, skipping token")
             memory[token_address] = now
             continue
+        if not lp_locked:
+            print("❌ LP not locked – token skipped")
+            memory[token_address] = now
+            continue
 
         bonding_percent = get_bonding_curve(token_address)
         bonding_bar = generate_progress_bar(bonding_percent) if bonding_percent is not None else "N/A"
@@ -294,7 +298,7 @@ def check_tokens():
 - 🔥 Liquidity Burned: ✅
 - ❄️ Freeze Authority: ✅
 - ➕ Mint Authority: ✅
-- 🧮 Rugscore: {rugscore or 'N/A'} ✅
+- 🧮 Rugscore: {rugscore or 'N/A'} {'🟢' if rugscore and rugscore >= 80 else '🟡' if rugscore and rugscore >= 60 else '🟠' if rugscore and rugscore >= 40 else '🔴' if rugscore else ''}
 - ✅ Token SAFE – LP Locked, No Honeypot
 
 🐳 *Smart Wallet Buy:* {smart_buy or 'N/A'} tokens
