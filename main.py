@@ -78,38 +78,37 @@ def get_scamr_holders(token_address):
         soup = BeautifulSoup(response.text, "html.parser")
         text = soup.get_text()
         for line in text.splitlines():
-            if "Holders" in line and any(char.isdigit() for char in line):
-                return line.strip()
-        return "Holders not found"
-    except Exception as e:
-        return f"Error: {e}"
+            if "Score:" in line and any(char.isdigit() for char in line):
+                return line.strip().split("Score:")[-1].strip()
+        return "N/A"
+    except Exception:
+        return "N/A"
 
 def get_rugcheck_data(token_address):
     def call():
         url = f"https://api.rugcheck.xyz/v1/tokens/{token_address}/report/summary"
-        response = requests.get(url, timeout=2.5)
-        if response.status_code == 200 and response.text.strip():
-            data = response.json()
-            score = data.get("score_normalised")
-            risks = data.get("risks", [])
-            honeypot = any("honeypot" in r["name"].lower() for r in risks)
-            lp_locked = all(
-                "liquidity" not in r["name"].lower() or "not" not in r["description"].lower()
-                for r in risks
-            )
-            holders = data.get("holders", 0) or 0
-            return score, honeypot, lp_locked, holders
-        return None
+        try:
+            response = requests.get(url, timeout=2.5)
+            if response.status_code == 200 and response.text.strip():
+                data = response.json()
+                score = data.get("score_normalised")
+                risks = data.get("risks", [])
+                honeypot = any("honeypot" in r["name"].lower() for r in risks)
+                lp_locked = all(
+                    "liquidity" not in r["name"].lower() or "not" not in r["description"].lower()
+                    for r in risks
+                )
+                holders = data.get("holders", 0) or 0
+                return score, honeypot, lp_locked, holders
+        except Exception:
+            pass
+        return None, None, None, 0
     try:
         result = call()
-        if result is None:
-            print("⚠️ Rugcheck failed first try, retrying...")
+        if result == (None, None, None, 0):
             result = call()
-        if result is None:
-            raise Exception("Rugcheck empty after retry")
         return result
-    except Exception as e:
-        print(f"❌ Rugcheck error: {e}")
+    except Exception:
         return None, None, None, 0
 
 def get_bonding_curve(token_address):
@@ -120,8 +119,7 @@ def get_bonding_curve(token_address):
         data = response.json()
         percentage = float(data.get("bondingCurve", {}).get("percentageComplete", 0.0)) * 100
         return round(percentage, 2)
-    except Exception as e:
-        print("❌ Bonding curve error:", e)
+    except Exception:
         return None
 
 def get_top_holders(token_address):
@@ -129,12 +127,11 @@ def get_top_holders(token_address):
         url = f"https://app.bubblemaps.io/api/token/sol/{token_address}"
         response = requests.get(url, timeout=10)
         data = response.json()
-        holders = data.get("holders", [])[:10]
+        holders = data.get("holders", [])[:5]
         percentages = [round(h.get("share", 0) * 100, 2) for h in holders]
         total = round(sum(percentages), 2)
         return total, percentages
-    except Exception as e:
-        print("❌ BubbleMaps error:", e)
+    except Exception:
         return None, []
 
 def get_smart_wallet_buy(token_address, current_mc, wallet_stats):
@@ -207,13 +204,8 @@ def send_telegram_message(message, token_address):
         print("❌ Telegram error:", e)
 
 def search_twitter_mentions(token_name, ticker):
-    try:
-        name_query = requests.get(f"https://api.x.com/search?q={token_name}", timeout=10).text
-        ticker_query = requests.get(f"https://api.x.com/search?q=%24{ticker}", timeout=10).text
-        return len(name_query), len(ticker_query)
-    except Exception as e:
-        print("❌ Twitter search error:", e)
-        return 0, 0
+    # Placeholder: tu peux améliorer avec une vraie API Twitter/X
+    return "N/A"
 
 def generate_progress_bar(percentage, width=20):
     filled = int(percentage / 100 * width)
@@ -292,7 +284,7 @@ def check_tokens():
         bonding_bar = generate_progress_bar(bonding_percent) if bonding_percent is not None else "N/A"
         top_total, top_list = get_top_holders(token_address)
         top_display = " | ".join([f"{p}%" for p in top_list]) if top_list else "N/A"
-        mentions_name, mentions_ticker = search_twitter_mentions(name, symbol)
+        mentions = search_twitter_mentions(name, symbol)
         smart_buy, wallet, wallet_stats = get_smart_wallet_buy(token_address, mc, wallet_stats)
         winrates = update_wallet_winrate(wallet_stats, tracking)
         winrate = winrates.get(wallet, 0) if wallet else 0
@@ -309,10 +301,7 @@ def check_tokens():
 📊 *Volume 1h:* ${int(lq):,}
 👥 *Holders:* {holders or 'N/A'}
 
-🧠 *Mentions X*
-- Nom: {mentions_name}
-- $Ticker: {mentions_ticker}
-🔗 [Voir sur X](https://twitter.com/search?q=%24{symbol})
+🧠 *Mentions X: {mentions}*
 
 📈 *Bonding Progress:* {bonding_percent or 'N/A'}%
 {bonding_bar}
@@ -409,20 +398,6 @@ def webhook():
         send_simple_message("🤖 Unknown command. Try /help", chat_id)
     return jsonify({"status": "ok"})
 
-@app.route("/analyze", methods=["GET"])
-def analyze_token():
-    token_address = request.args.get("token")
-    if not token_address:
-        return "Token address missing", 400
-    tracking = load_json(TRACKING_FILE)
-    token_data = tracking.get(token_address)
-    if not token_data:
-        return "Token not found", 404
-    prompt = f"Token: ${token_data.get('symbol')}, Market Cap: {token_data.get('current')}"
-    result = ask_gpt(prompt)
-    send_telegram_message(f"🤖 *GPT Analysis – ${token_data.get('symbol')}*\n\n{result}", token_address)
-    return "Analysis sent"
-
 # ==== INTEGRATION OPENAI v1+ AVEC SECRET FILE ====
 from openai import OpenAI
 
@@ -451,8 +426,9 @@ def ask_gpt(prompt):
                 {
                     "role": "system",
                     "content": (
-                        "You are a professional crypto trader with deep knowledge of meme coins, "
-                        "rugpull detection, and pump.fun dynamics. Be concise and strategic."
+                        "Tu es un expert en trading crypto spécialisé dans les tokens ultra-récents sur Pump.fun (Solana). "
+                        "Tu as l'expérience de TendersAlt : tu appliques des stratégies simples, sans émotions, en t'appuyant sur des probabilités, des setups Fibonacci, et l'observation des comportements des whales. Tu ne FOMO jamais. "
+                        "Analyse objectivement, sois direct, concis, stratégique."
                     )
                 },
                 {
@@ -465,6 +441,90 @@ def ask_gpt(prompt):
         return response.choices[0].message.content.strip()
     except Exception as e:
         return f"Error calling GPT: {e}"
+
+@app.route("/analyze", methods=["GET"])
+def analyze_token():
+    token_address = request.args.get("token")
+    if not token_address:
+        return "Token address missing", 400
+
+    # 1/ Cherche dans le tracking
+    tracking = load_json(TRACKING_FILE)
+    token_data = tracking.get(token_address)
+    if token_data:
+        name = token_data.get('name', token_data.get('symbol', 'N/A'))
+        symbol = token_data.get('symbol', 'N/A')
+        market_cap = token_data.get('current', 'N/A')
+        volume = token_data.get('volume', 'N/A')
+        holders = token_data.get('holders', 'N/A')
+    else:
+        # 2/ Sinon, cherche en live chez Moralis
+        moralis_url = "https://solana-gateway.moralis.io/token/mainnet/exchange/pumpfun/graduated?limit=100"
+        headers = {"Accept": "application/json", "X-API-Key": API_KEY}
+        try:
+            response = requests.get(moralis_url, headers=headers, timeout=10)
+            results = response.json().get("result", [])
+            moralis_data = next((item for item in results if item.get("tokenAddress") == token_address), None)
+        except Exception as e:
+            return f"Erreur API Moralis: {e}", 500
+
+        if not moralis_data:
+            return "Token not found", 404
+
+        name = moralis_data.get('name', 'N/A')
+        symbol = moralis_data.get('symbol', 'N/A')
+        market_cap = moralis_data.get('fullyDilutedValuation', 'N/A')
+        volume = moralis_data.get('liquidity', 'N/A')
+        holders = moralis_data.get('holders', 'N/A')
+
+    # Infos annexes live
+    rugscore, honeypot, lp_locked, holders_rug = get_rugcheck_data(token_address)
+    bonding_percent = get_bonding_curve(token_address)
+    top_total, top_list = get_top_holders(token_address)
+    scamr_note = get_scamr_holders(token_address)
+    lp_status = "Locked" if lp_locked else "Not locked"
+    smart_wallets = "Oui" if holders_rug and holders_rug > 100 else "Non"
+    mentions = "N/A"
+    top5_distribution = " | ".join([f"{p}%" for p in (top_list[:5] if top_list else [])]) or "N/A"
+
+    prompt = f"""
+Tu es un expert en trading crypto spécialisé dans les tokens ultra-récents sur Pump.fun (Solana). Tu as l'expérience de TendersAlt : tu appliques des stratégies simples, sans émotions, en t'appuyant sur des probabilités, des setups Fibonacci, et l'observation des comportements des whales. Tu ne FOMO jamais.
+
+Analyse ce token objectivement en te basant sur les infos suivantes :
+
+- Nom du token : {name}
+- Ticker : ${symbol}
+- Market Cap actuel : {market_cap} $
+- Volume 1h : {volume}
+- % de bonding curve rempli : {bonding_percent or 'N/A'}%
+- Nombre de holders : {holders}
+- Rugscore : {rugscore or 'N/A'}/100
+- LP status : {lp_status}
+- Présence de smart wallets : {smart_wallets}
+- Top 5 holders = {top5_distribution}
+- Mentions sur Twitter : {mentions}
+- Score de confiance Scamr.io : {scamr_note}
+
+---
+
+✅ Réponds comme si tu étais un trader pro :
+
+1. **Est-ce un setup intéressant ? Pourquoi ?**
+2. **Conseilles-tu d’entrer ? Si oui, à quelle market cap ?**
+3. **Quel serait un bon stop loss ?**
+4. **Combien du portefeuille tu y alloues ? (1%, 3%, 5% ?...)**
+5. **Quel est le signal pour sortir ?**
+6. **Y a-t-il un signal de manipulation / fake pump ?**
+
+Sois direct, concis, stratégique, comme si tu devais conseiller un trader qui ne veut pas perdre de temps. Mets en garde si nécessaire.
+""".strip()
+
+    result = ask_gpt(prompt)
+    send_telegram_message(f"🤖 *GPT Analysis – ${symbol}*\n\n{result}", token_address)
+    return jsonify({
+        "prompt": prompt,
+        "analysis": result
+    })
 
 def start_loop():
     # Envoi automatique à 6h et 20h
