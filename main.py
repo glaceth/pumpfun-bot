@@ -123,7 +123,7 @@ def rugcheck_login():
             "timestamp": timestamp
         }
         to_sign = f"{message_dict['message']}|{message_dict['publicKey']}|{message_dict['timestamp']}".encode()
-        signature = kp.sign(to_sign)
+        signature = kp.sign_message(to_sign)
         signature_bytes = list(signature.signature)
         payload = {
             "message": message_dict,
