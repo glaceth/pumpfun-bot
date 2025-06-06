@@ -1,28 +1,14 @@
 import os
 import time
 import json
+import requests
 from datetime import datetime
 from flask import Flask, request, jsonify
 from threading import Thread
-import requests
 from bs4 import BeautifulSoup
 import openai
 
-def get_scamr_holders(token_address):
-    try:
-        url = f"https://ai.scamr.xyz/token/{token_address}"
-        headers = {"User-Agent": "Mozilla/5.0"}
-        response = requests.get(url, headers=headers, timeout=10)
-        soup = BeautifulSoup(response.text, "html.parser")
-        text = soup.get_text()
-        for line in text.splitlines():
-            if "Holders" in line and any(char.isdigit() for char in line):
-                return line.strip()
-        return "Holders not found"
-    except Exception as e:
-        return f"Error: {e}"
-
-print("✅ Fichier lancé correctement — import os OK")
+print("✅ Fichier lancé correctement — import os OK", flush=True)
 
 app = Flask(__name__)
 
@@ -71,12 +57,33 @@ def send_simple_message(text, chat_id):
 def load_json(file):
     if not os.path.exists(file):
         return {}
-    with open(file, "r") as f:
-        return json.load(f)
+    try:
+        with open(file, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as e:
+        print(f"❌ JSON load error for {file}: {e}")
+        return {}
 
 def save_json(data, file):
-    with open(file, "w") as f:
-        json.dump(data, f)
+    try:
+        with open(file, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"❌ JSON save error for {file}: {e}")
+
+def get_scamr_holders(token_address):
+    try:
+        url = f"https://ai.scamr.xyz/token/{token_address}"
+        headers = {"User-Agent": "Mozilla/5.0"}
+        response = requests.get(url, headers=headers, timeout=10)
+        soup = BeautifulSoup(response.text, "html.parser")
+        text = soup.get_text()
+        for line in text.splitlines():
+            if "Holders" in line and any(char.isdigit() for char in line):
+                return line.strip()
+        return "Holders not found"
+    except Exception as e:
+        return f"Error: {e}"
 
 def get_rugcheck_data(token_address):
     def call():
@@ -93,9 +100,7 @@ def get_rugcheck_data(token_address):
             )
             holders = data.get("holders", 0) or 0
             return score, honeypot, lp_locked, holders
-        else:
-            return None
-
+        return None
     try:
         result = call()
         if result is None:
@@ -252,7 +257,6 @@ def check_tokens():
         print("❌ Moralis API error:", e)
         time.sleep(300)
         return
-
     memory = load_json(MEMORY_FILE)
     tracking = load_json(TRACKING_FILE)
     wallet_stats = load_json(WALLET_STATS_FILE)
@@ -272,7 +276,6 @@ def check_tokens():
         if mc < 45000 or lq < 8000 or (holders != 0 and holders < 80):
             print("❌ Filtered out due to MC, liquidity or holders")
             continue
-
         if honeypot:
             print("⚠️ Honeypot detected, skipping token")
             memory[token_address] = now
@@ -392,11 +395,9 @@ def webhook():
     data = request.get_json()
     if not data or "message" not in data:
         return jsonify({"status": "ignored"})
-
     message = data["message"]
     chat_id = message["chat"]["id"]
     text = message.get("text", "")
-
     if text == "/scan":
         username = message["from"].get("username", "")
         if username != ADMIN_USER_ID:
@@ -407,7 +408,6 @@ def webhook():
         send_simple_message("📘 Commands available:\n/scan - Manual scan\n/help - This help message", chat_id)
     else:
         send_simple_message("🤖 Unknown command. Try /help", chat_id)
-
     return jsonify({"status": "ok"})
 
 @app.route("/analyze", methods=["GET"])
@@ -441,7 +441,6 @@ def start_loop():
     current_time = datetime.now()
     if current_time.hour in [6, 20] and current_time.minute < 2:
         send_daily_winners()
-
     while True:
         check_tokens()
         time.sleep(120)
@@ -450,7 +449,6 @@ def send_daily_winners():
     tracking = load_json(TRACKING_FILE)
     now = datetime.now()
     winners = []
-
     for token_address, data in tracking.items():
         symbol = data.get("symbol", "N/A")
         initial = data.get("initial", 0)
@@ -458,10 +456,8 @@ def send_daily_winners():
         if initial > 0 and current > initial:
             multiplier = round(current / initial, 2)
             winners.append((symbol, multiplier, token_address))
-
     winners.sort(key=lambda x: x[1], reverse=True)
     top_winners = winners[:3]
-
     if top_winners:
         msg = f"🏆 *Top Tokens Since Detection – {now.strftime('%Y-%m-%d')}*\n"
         for i, (symbol, mult, _) in enumerate(top_winners, 1):
@@ -469,5 +465,5 @@ def send_daily_winners():
         send_simple_message(msg.strip(), CHAT_ID)
 
 if __name__ == "__main__":
-    Thread(target=run_flask).start()
+    Thread(target=run_flask, daemon=True).start()
     start_loop()
