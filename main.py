@@ -109,7 +109,12 @@ def rugcheck_login():
             priv_bytes = bytes.fromhex(RUGCHECK_SOLANA_PRIVATE_KEY)
         except Exception:
             priv_bytes = base58.b58decode(RUGCHECK_SOLANA_PRIVATE_KEY)
-        kp = Keypair.from_bytes(priv_bytes)
+        if len(priv_bytes) == 32:
+    kp = Keypair.from_seed(priv_bytes)
+elif len(priv_bytes) == 64:
+    kp = Keypair.from_bytes(priv_bytes)
+else:
+    raise ValueError("La clé privée doit faire 32 ou 64 bytes")
         public_key_str = str(kp.public_key)
         timestamp = int(time.time())
         message_dict = {
