@@ -427,6 +427,7 @@ def analyze_token():
 from openai import OpenAI
 
 openai_api_key = os.getenv("OPENAI_API_KEY")
+print("DEBUG Render ENV : OPENAI_API_KEY =", repr(openai_api_key))  # <-- debug visible dans les logs Render
 if not openai_api_key:
     raise RuntimeError(
         "❌ ERREUR : la variable d'environnement OPENAI_API_KEY n'est pas définie. "
