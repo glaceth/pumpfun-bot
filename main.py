@@ -255,7 +255,6 @@ def check_tokens():
             print("❌ Filtered out due to MC, liquidity or holders")
             continue
 
-        # Correction: get_rugcheck_data retourne 4 valeurs, il faut bien tout unpacker
         rugscore, honeypot, lp_locked, holders_rug = get_rugcheck_data(token_address)
         if honeypot:
             print("⚠️ Honeypot detected, skipping token")
@@ -269,7 +268,6 @@ def check_tokens():
             print(f"❌ Rugscore too low ({rugscore}) – skipping token")
             memory[token_address] = now
             continue
-
 
         bonding_percent = get_bonding_curve(token_address)
         bonding_bar = generate_progress_bar(bonding_percent) if bonding_percent is not None else "N/A"
@@ -421,76 +419,6 @@ def ask_gpt(prompt):
     except Exception as e:
         return f"Error calling GPT: {e}"
 
-def start_loop():
-    # Envoi automatique à 6h et 20h
-    current_time = datetime.now()
-    if current_time.hour in [6, 20] and current_time.minute < 2:
-        send_daily_winners()
-
-    while True:
-        check_tokens()
-        time.sleep(120)
-
-if __name__ == "__main__":
-    Thread(target=run_flask).start()
-    start_loop()
-
-# === FONCTIONS AJOUTÉES ===
-
-    try:
-        api_key = os.getenv("HELIUS_API_KEY")
-        url = f"https://api.helius.xyz/v0/token-holders?mint={token_address}&api-key={api_key}&page=1&limit=1"
-        response = requests.get(url)
-        if response.status_code != 200:
-            return None
-        data = response.json()
-        return data.get("total", 0)
-    except Exception as e:
-        print(f"❌ Erreur Helius holders: {e}")
-        return None
-
-def get_wallet_deployment_stats_enhanced(wallet_address):
-    try:
-        api_key = os.getenv("HELIUS_API_KEY")
-        url = f"https://api.helius.xyz/v0/addresses/{wallet_address}/transactions?api-key={api_key}&limit=20"
-        response = requests.get(url)
-        if response.status_code != 200:
-            return None
-
-        txs = response.json()
-        launched_tokens = set()
-
-        for tx in txs:
-            if "Pump.fun" in json.dumps(tx):  # simple filtre Pump
-                for transfer in tx.get("tokenTransfers", []):
-                    if transfer.get("type") == "mint":
-                        mint = transfer.get("mint")
-                        if mint:
-                            launched_tokens.add(mint)
-
-        return {
-            "count": len(launched_tokens),
-            "badge": "🧨 Serial Launcher" if len(launched_tokens) > 20 else (
-                "🆕 First Launch" if len(launched_tokens) == 1 else None)
-        }
-    except Exception as e:
-        print(f"❌ Erreur Helius wallet stats: {e}")
-        return None
-
-def get_mention_count_nitter(ticker):
-    try:
-        url = f"https://nitter.net/search?f=tweets&q=%24{ticker}"
-        response = requests.get(url, headers={"User-Agent": "Mozilla/5.0"})
-        if response.status_code != 200:
-            return 0
-        content = response.text.lower()
-        return content.count('<div class="timeline-item"')
-    except Exception as e:
-        print(f"❌ Erreur mentions Twitter Nitter : {e}")
-        return 0
-
-# === FONCTION DAILY WINNERS ===
-
 def send_daily_winners():
     tracking = load_json(TRACKING_FILE)
     now = datetime.now()
@@ -509,16 +437,20 @@ def send_daily_winners():
 
     if top_winners:
         msg = f"🏆 *Top Tokens Since Detection – {now.strftime('%Y-%m-%d')}*\n"
-        # Appel explicite à Helius et BubbleMaps pour récupérer les holders
-        
-        print(f"🔎 Helius holders fetched: {helius_holders}")
-
-        top_display, top_total = get_top_holders(token_address)
-        print(f"📊 Top holders fetched: Total={top_total}, Display={top_display}")
-
-        msg += f"\n👥 *Holders (Helius):* {helius_holders or 'N/A'}"
-        msg += f"\n📦 *Top 10 Holders:* {top_total or 'N/A'}%\n{top_display or 'N/A'}"
-
         for i, (symbol, mult, _) in enumerate(top_winners, 1):
             msg += f"{i}. ${symbol} – x{mult}\n"
         send_simple_message(msg.strip(), CHAT_ID)
+
+def start_loop():
+    # Envoi automatique à 6h et 20h
+    current_time = datetime.now()
+    if current_time.hour in [6, 20] and current_time.minute < 2:
+        send_daily_winners()
+
+    while True:
+        check_tokens()
+        time.sleep(120)
+
+if __name__ == "__main__":
+    Thread(target=run_flask).start()
+    start_loop()
