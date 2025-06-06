@@ -75,10 +75,11 @@ def get_rugcheck_data(token_address):
         risks = data.get("risks", [])
         honeypot = any("honeypot" in r["name"].lower() for r in risks)
         lp_locked = all("liquidity" not in r["name"].lower() or "not" not in r["description"].lower() for r in risks)
-        return score, honeypot, lp_locked
+        holders = data.get("holders", 0)
+        return score, honeypot, lp_locked, holders
     except Exception as e:
         print("❌ Rugcheck error:", e)
-        return None, None, None
+        return None, None, None, 0
 
 def get_bonding_curve(token_address):
     try:
@@ -239,7 +240,7 @@ def check_tokens():
         symbol = token.get("symbol", "N/A")
         mc = float(token.get("fullyDilutedValuation") or 0)
         lq = float(token.get("liquidity") or 0)
-        holders = int(token.get("holders") or 0)
+        rugscore, honeypot, lp_locked, holders = get_rugcheck_data(token_address)
         if mc < 45000 or lq < 8000 or holders < 80:
             print("❌ Filtered out due to MC, liquidity or holders")
             continue
