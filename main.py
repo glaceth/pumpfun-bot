@@ -1,3 +1,23 @@
+
+import requests
+from bs4 import BeautifulSoup
+
+def get_scamr_holders(token_address):
+    try:
+        url = f"https://ai.scamr.xyz/token/{token_address}"
+        headers = {"User-Agent": "Mozilla/5.0"}
+        response = requests.get(url, headers=headers, timeout=10)
+        soup = BeautifulSoup(response.text, "html.parser")
+        text = soup.get_text()
+
+        for line in text.splitlines():
+            if "Holders" in line and any(char.isdigit() for char in line):
+                return line.strip()
+        return "Holders not found"
+    except Exception as e:
+        return f"Error: {e}"
+
+
 import os
 import time
 import json
