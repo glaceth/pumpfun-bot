@@ -249,13 +249,14 @@ def check_tokens():
         symbol = token.get("symbol", "N/A")
         mc = float(token.get("fullyDilutedValuation") or 0)
         lq = float(token.get("liquidity") or 0)
-        rugscore, honeypot, lp_locked, holders = get_rugcheck_data(token_address)
+        rugscore, honeypot, lp_locked, holders_rug = get_rugcheck_data(token_address)
+        holders = holders_rug or token.get('holders', 0)
         if mc < 45000 or lq < 8000 or (holders != 0 and holders < 80):
             print("❌ Filtered out due to MC, liquidity or holders")
             continue
 
         # Correction: get_rugcheck_data retourne 4 valeurs, il faut bien tout unpacker
-        rugscore, honeypot, lp_locked, holders = get_rugcheck_data(token_address)
+        rugscore, honeypot, lp_locked, holders_rug = get_rugcheck_data(token_address)
         if honeypot:
             print("⚠️ Honeypot detected, skipping token")
             memory[token_address] = now
@@ -289,7 +290,7 @@ def check_tokens():
 
 💰 *Market Cap:* ${int(mc):,}
 📊 *Volume 1h:* ${int(lq):,}
-👥 *Holders:* {holders}
+👥 *Holders:* {holders or 'N/A'}
 
 🧠 *Mentions X*
 - Nom: {mentions_name}
@@ -436,7 +437,6 @@ if __name__ == "__main__":
 
 # === FONCTIONS AJOUTÉES ===
 
-def get_helius_holders(token_address):
     try:
         api_key = os.getenv("HELIUS_API_KEY")
         url = f"https://api.helius.xyz/v0/token-holders?mint={token_address}&api-key={api_key}&page=1&limit=1"
@@ -510,7 +510,7 @@ def send_daily_winners():
     if top_winners:
         msg = f"🏆 *Top Tokens Since Detection – {now.strftime('%Y-%m-%d')}*\n"
         # Appel explicite à Helius et BubbleMaps pour récupérer les holders
-        helius_holders = get_helius_holders(token_address)
+        
         print(f"🔎 Helius holders fetched: {helius_holders}")
 
         top_display, top_total = get_top_holders(token_address)
