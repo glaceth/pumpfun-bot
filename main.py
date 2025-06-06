@@ -66,18 +66,21 @@ def save_json(data, file):
     with open(file, "w") as f:
         json.dump(data, f)
 
+
 def get_rugcheck_data(token_address):
     try:
         url = f"https://api.rugcheck.xyz/v1/tokens/{token_address}/report/summary"
-        response = requests.get(url, timeout=10)
+        response = requests.get(url, timeout=4)
         data = response.json()
         score = data.get("score_normalised")
         risks = data.get("risks", [])
         honeypot = any("honeypot" in r["name"].lower() for r in risks)
         lp_locked = all("liquidity" not in r["name"].lower() or "not" not in r["description"].lower() for r in risks)
-        holders = data.get("holders", 0)
+        holders = data.get("holders", 0) or 0
         return score, honeypot, lp_locked, holders
     except Exception as e:
+        print(f"❌ Rugcheck error: {e}")
+        return None, None, None, 0
         print("❌ Rugcheck error:", e)
         return None, None, None, 0
 
