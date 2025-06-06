@@ -423,15 +423,23 @@ def analyze_token():
     send_telegram_message(f"🤖 *GPT Analysis – ${token_data.get('symbol')}*\n\n{result}", token_address)
     return "Analysis sent"
 
-# ==== INTEGRATION OPENAI v1+ AVEC VERIFICATION ENV ====
+# ==== INTEGRATION OPENAI v1+ AVEC SECRET FILE ====
 from openai import OpenAI
 
-openai_api_key = os.getenv("OPENAI_API_KEY")
-print("DEBUG Render ENV : OPENAI_API_KEY =", repr(openai_api_key))  # <-- debug visible dans les logs Render
+def read_secret_file(path):
+    try:
+        with open(path) as f:
+            return f.read().strip()
+    except Exception as e:
+        print(f"Erreur lecture secret file {path} :", e)
+        return None
+
+openai_api_key = read_secret_file("/etc/secrets/OPENAI_API_KEY")
+print("DEBUG OPENAI_API_KEY (file):", repr(openai_api_key))
 if not openai_api_key:
     raise RuntimeError(
-        "❌ ERREUR : la variable d'environnement OPENAI_API_KEY n'est pas définie. "
-        "Vérifie la configuration sur Render, la casse et que le service a bien redémarré !"
+        "❌ ERREUR : la clé OpenAI n'est pas trouvée dans le secret file /etc/secrets/OPENAI_API_KEY. "
+        "Vérifie le nom et le contenu du secret file dans Render !"
     )
 client = OpenAI(api_key=openai_api_key)
 
