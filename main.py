@@ -412,10 +412,10 @@ def ask_gpt(prompt):
         return f"Error calling GPT: {e}"
 
 def start_loop():
-        # Envoi automatique à 6h et 20h
-        current_time = datetime.now()
-        if current_time.hour in [6, 20] and current_time.minute < 2:
-            send_daily_winners()
+    # Envoi automatique à 6h et 20h
+    current_time = datetime.now()
+    if current_time.hour in [6, 20] and current_time.minute < 2:
+        send_daily_winners()
 
     while True:
         check_tokens()
@@ -424,7 +424,6 @@ def start_loop():
 if __name__ == "__main__":
     Thread(target=run_flask).start()
     start_loop()
-
 
 # === FONCTIONS AJOUTÉES ===
 
@@ -480,7 +479,6 @@ def get_mention_count_nitter(ticker):
     except Exception as e:
         print(f"❌ Erreur mentions Twitter Nitter : {e}")
         return 0
-
 
 # === FONCTION DAILY WINNERS ===
 
