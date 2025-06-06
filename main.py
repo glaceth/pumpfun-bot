@@ -109,7 +109,7 @@ def rugcheck_login():
             priv_bytes = bytes.fromhex(RUGCHECK_SOLANA_PRIVATE_KEY)
         except Exception:
             priv_bytes = base58.b58decode(RUGCHECK_SOLANA_PRIVATE_KEY)
-        kp = Keypair.from_secret_key(priv_bytes)
+        kp = Keypair.from_bytes(priv_bytes)
         public_key_str = str(kp.public_key)
         timestamp = int(time.time())
         message_dict = {
