@@ -3,3 +3,5 @@ flask
 python-dotenv
 openai
 beautifulsoup4
+base58
+solana
