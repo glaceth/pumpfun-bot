@@ -125,7 +125,6 @@ def get_rugcheck_data(token_address):
                 top_holders.append(pct)
             freeze_removed = data.get("freezeAuthority") is None
             mint_revoked = data.get("mintAuthority") is None
-            # Récupération du label textuel
             risk_label = data.get("risk_label") or data.get("riskLevel") or data.get("risk_level")
             return score, honeypot, lp_locked, holders, volume, top_holders, freeze_removed, mint_revoked, risk_label
         else:
@@ -224,6 +223,13 @@ def check_tokens():
 
         rugscore, honeypot, lp_locked, holders, volume, top_holders, freeze_removed, mint_revoked, risk_label = get_rugcheck_data(token_address)
         logging.info(f"🔎 Token found: {symbol} — MC: {mc} — Holders: {holders}")
+
+        # --- FILTRE TOP HOLDER > 30% ---
+        if top_holders and top_holders[0] >= 30:
+            logging.info(f"❌ Top holder >= 30% ({top_holders[0]}%) – skipping token")
+            memory[token_address] = now
+            continue
+        # --- FIN FILTRE ---
 
         if mc < 45000 or lq < 8000 or (holders is not None and holders < 80):
             logging.info("❌ Filtered out due to MC, liquidity or holders")
