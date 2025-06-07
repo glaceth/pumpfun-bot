@@ -106,14 +106,27 @@ def get_rugcheck_data(token_address):
                 "liquidity" not in r["name"].lower() or "not" not in r["description"].lower()
                 for r in risks
             )
-            holders = data.get("holders", 0) or 0
+            holders = data.get("holders", None)
             return score, honeypot, lp_locked, holders
         else:
             logging.error(f"RugCheck public error: {resp.status_code} {resp.text}")
-            return None, None, None, 0
+            return None, None, None, None
     except Exception as e:
         logging.error(f"RugCheck API error: {e}")
-        return None, None, None, 0
+        return None, None, None, None
+
+def get_rugcheck_holders_with_retry(token_address, max_retries=15, delay=2):
+    """
+    Essaie de récupérer le nombre de holders via RugCheck,
+    en attendant jusqu'à max_retries * delay secondes.
+    Retourne None si l'info reste indisponible.
+    """
+    for attempt in range(max_retries):
+        _, _, _, holders = get_rugcheck_data(token_address)
+        if holders and holders > 0:
+            return holders
+        time.sleep(delay)
+    return None
 
 def get_bonding_curve(token_address):
     try:
@@ -259,7 +272,6 @@ def check_tokens():
     now = time.time()
 
     for token in data:
-        logging.info(f"🔎 Token found: {token.get('symbol', 'N/A')} — MC: {token.get('fullyDilutedValuation')} — Holders: None")
         token_address = token.get("tokenAddress")
         if not token_address:
             continue
@@ -267,9 +279,17 @@ def check_tokens():
         symbol = token.get("symbol", "N/A")
         mc = float(token.get("fullyDilutedValuation") or 0)
         lq = float(token.get("liquidity") or 0)
-        rugscore, honeypot, lp_locked, holders_rug = get_rugcheck_data(token_address)
-        holders = holders_rug or token.get('holders', 0)
-        if mc < 45000 or lq < 8000 or (holders != 0 and holders < 80):
+
+        # --- NOUVEAU : attendre holders dispo avant de continuer
+        holders = get_rugcheck_holders_with_retry(token_address, max_retries=15, delay=2)
+        if holders is None:
+            logging.info(f"⏳ Holders non trouvés pour {symbol} ({token_address}), token ignoré.")
+            continue
+
+        rugscore, honeypot, lp_locked, _ = get_rugcheck_data(token_address)
+        logging.info(f"🔎 Token found: {symbol} — MC: {mc} — Holders: {holders}")
+
+        if mc < 45000 or lq < 8000 or holders < 80:
             logging.info("❌ Filtered out due to MC, liquidity or holders")
             continue
         if honeypot:
@@ -304,7 +324,7 @@ def check_tokens():
 
 💰 *Market Cap:* ${int(mc):,}
 📊 *Volume 1h:* ${int(lq):,}
-👥 *Holders:* {holders or 'N/A'}
+👥 *Holders:* {holders}
 
 🧠 *Mentions X: {mentions}*
 
