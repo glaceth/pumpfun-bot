@@ -7,24 +7,116 @@ from flask import Flask, request, jsonify
 from threading import Thread
 from bs4 import BeautifulSoup
 import base58
-from solana.keypair import Keypair
+from solders.keypair import Keypair
+import logging
 
-print("✅ Fichier lancé correctement — import os OK", flush=True)
+# === CONFIG LOGGING ===
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s %(levelname)s %(message)s',
+)
+logging.info("✅ Fichier lancé correctement — import os OK")
 
 app = Flask(__name__)
+
+# --- Authentification RugCheck robuste ---
+class RugCheckRateLimitError(Exception):
+    pass
+
+class RugCheckAuthenticator:
+    def __init__(self):
+        self.token = None
+        self.last_login_time = 0
+        self.backoff = 10
+        self.max_backoff = 600
+
+    def login(self):
+        if self.token and not self.token_expired():
+            return self.token
+        attempt = 0
+        while True:
+            try:
+                token = self.rugcheck_login_request()
+                self.token = token
+                self.last_login_time = time.time()
+                self.backoff = 10
+                logging.info("✅ Login RugCheck réussi")
+                return token
+            except RugCheckRateLimitError:
+                logging.error("❌ Rate limit! Attente de %ds avant nouvel essai.", self.backoff)
+                time.sleep(self.backoff)
+                self.backoff = min(self.backoff * 2, self.max_backoff)
+                attempt += 1
+            except Exception as e:
+                logging.error("❌ Erreur login RugCheck: %s", str(e))
+                break
+
+    def token_expired(self):
+        # Optionnel: à améliorer si tu veux vérifier l'expiration réelle du token
+        return False
+
+    def rugcheck_login_request(self):
+        if not RUGCHECK_SOLANA_PRIVATE_KEY or not RUGCHECK_PUBLIC_ADDRESS:
+            logging.error("❌ RUGCHECK secrets missing (RUGCHECK_SOLANA_PRIVATE_KEY or RUGCHECK_PUBLIC_ADDRESS absent)")
+            return None
+        try:
+            try:
+                priv_bytes = bytes.fromhex(RUGCHECK_SOLANA_PRIVATE_KEY)
+            except Exception:
+                priv_bytes = base58.b58decode(RUGCHECK_SOLANA_PRIVATE_KEY)
+            if len(priv_bytes) == 32:
+                kp = Keypair.from_seed(priv_bytes)
+            elif len(priv_bytes) == 64:
+                kp = Keypair.from_bytes(priv_bytes)
+            else:
+                raise ValueError("La clé privée doit faire 32 ou 64 bytes")
+            public_key_str = str(kp.pubkey())
+            timestamp = int(time.time())
+            message_dict = {
+                "message": "Sign-in to Rugcheck.xyz",
+                "publicKey": public_key_str,
+                "timestamp": timestamp
+            }
+            to_sign = f"{message_dict['message']}|{message_dict['publicKey']}|{message_dict['timestamp']}".encode()
+            signature = kp.sign_message(to_sign)
+            signature_bytes = list(bytes(signature))
+            payload = {
+                "message": message_dict,
+                "signature": {"data": signature_bytes, "type": "ed25519"},
+                "wallet": public_key_str
+            }
+            url = "https://api.rugcheck.xyz/auth/login/solana"
+            resp = requests.post(url, json=payload, timeout=10)
+            if resp.status_code == 429:
+                raise RugCheckRateLimitError()
+            if resp.status_code == 200:
+                token = resp.json().get("token")
+                logging.info("✅ RugCheck login OK")
+                return token
+            else:
+                logging.error(f"❌ RugCheck login failed: {resp.status_code} {resp.text}")
+                return None
+        except Exception as e:
+            logging.exception(f"❌ RugCheck login error: {e}")
+            return None
+
+# --- Fin ajout authentification RugCheck robuste ---
 
 ADMIN_USER_ID = os.getenv("ADMIN_USER_ID", "Glacesol")
 
 def load_secret(path, fallback_env=None):
     try:
         with open(path) as f:
-            return f.read().strip()
-    except Exception:
+            secret = f.read().strip()
+            logging.debug(f"Secret chargé depuis {path}")
+            return secret
+    except Exception as e:
         if fallback_env:
             val = os.getenv(fallback_env)
             if val:
+                logging.debug(f"Secret chargé depuis env {fallback_env}")
                 return val
-        print(f"❌ Missing secret {path} and no fallback.")
+        logging.error(f"❌ Missing secret {path} and no fallback ({fallback_env}) : {e}")
         return None
 
 API_KEY = load_secret("/etc/secrets/MORALIS_API", "MORALIS_API")
@@ -32,6 +124,13 @@ TELEGRAM_TOKEN = load_secret("/etc/secrets/TELEGRAM_TOKEN", "TELEGRAM_TOKEN")
 CHAT_ID = load_secret("/etc/secrets/CHAT_ID", "CHAT_ID")
 HELIUS_API_KEY = load_secret("/etc/secrets/HELIUS_API", "HELIUS_API_KEY")
 CALLSTATIC_API = load_secret("/etc/secrets/CALLSTATIC_API", "CALLSTATIC_API")
+
+# Correction ici : secrets Rugcheck gérés comme les autres
+RUGCHECK_SOLANA_PRIVATE_KEY = load_secret("/etc/secrets/RUGCHECK_SOLANA_PRIVATE_KEY", "RUGCHECK_SOLANA_PRIVATE_KEY")
+RUGCHECK_PUBLIC_ADDRESS = load_secret("/etc/secrets/RUGCHECK_PUBLIC_ADDRESS", "RUGCHECK_PUBLIC_ADDRESS")
+
+# --- Instanciation du nouvel authentificateur RugCheck ---
+rugcheck_auth = RugCheckAuthenticator()
 
 MEMORY_FILE = "token_memory_ultimate.json"
 TRACKING_FILE = "token_tracking.json"
@@ -53,7 +152,7 @@ def send_simple_message(text, chat_id):
     try:
         requests.post(url, json=payload, timeout=10)
     except Exception as e:
-        print("❌ Telegram simple message error:", e)
+        logging.error("❌ Telegram simple message error: %s", e)
 
 def load_json(file):
     if not os.path.exists(file):
@@ -62,7 +161,7 @@ def load_json(file):
         with open(file, "r", encoding="utf-8") as f:
             return json.load(f)
     except Exception as e:
-        print(f"❌ JSON load error for {file}: {e}")
+        logging.error(f"❌ JSON load error for {file}: {e}")
         return {}
 
 def save_json(data, file):
@@ -70,7 +169,7 @@ def save_json(data, file):
         with open(file, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
     except Exception as e:
-        print(f"❌ JSON save error for {file}: {e}")
+        logging.error(f"❌ JSON save error for {file}: {e}")
 
 def get_scamr_holders(token_address):
     try:
@@ -83,72 +182,15 @@ def get_scamr_holders(token_address):
             if "Score:" in line and any(char.isdigit() for char in line):
                 return line.strip().split("Score:")[-1].strip()
         return "N/A"
-    except Exception:
-        return "N/A"
-
-# ====== INTEGRATION RUGCHECK AUTH SOLANA ======
-RUGCHECK_SOLANA_PRIVATE_KEY = os.getenv("RUGCHECK_SOLANA_PRIVATE_KEY")
-RUGCHECK_PUBLIC_ADDRESS = os.getenv("RUGCHECK_PUBLIC_ADDRESS")
-
-
-from nacl.signing import SigningKey
-from base64 import b64encode
-
-def rugcheck_login():
-    if not RUGCHECK_SOLANA_PRIVATE_KEY or not RUGCHECK_PUBLIC_ADDRESS:
-        print("❌ RUGCHECK secrets missing")
-        return None
-    try:
-        try:
-            private_key_bytes = bytes.fromhex(RUGCHECK_SOLANA_PRIVATE_KEY)
-        except Exception:
-            private_key_bytes = base58.b58decode(RUGCHECK_SOLANA_PRIVATE_KEY)
-
-        seed = private_key_bytes[:32]
-        signing_key = SigningKey(seed)
-        public_key = signing_key.verify_key.encode()
-        public_key_b58 = base58.b58encode(public_key).decode()
-
-        timestamp = int(time.time())
-        message = "Sign-in to Rugcheck.xyz"
-        to_sign = f"{message}|{public_key_b58}|{timestamp}".encode()
-
-        signature_bytes = signing_key.sign(to_sign).signature
-        signature_list = list(signature_bytes)
-
-        payload = {
-            "message": {
-                "message": message,
-                "publicKey": public_key_b58,
-                "timestamp": timestamp
-            },
-            "signature": {
-                "data": signature_list,
-                "type": "ed25519"
-            },
-            "wallet": public_key_b58
-        }
-
-        url = "https://api.rugcheck.xyz/v1/auth/login"
-        resp = requests.post(url, json=payload, timeout=10)
-
-        if resp.status_code == 200:
-            token = resp.json().get("token")
-            print("✅ RugCheck login OK")
-            return token
-        else:
-            print(f"❌ RugCheck login failed: {resp.status_code} {resp.text}")
-            return None
     except Exception as e:
-        print(f"❌ RugCheck login error: {e}")
-        return None
-
+        logging.error(f"❌ Scamr error: {e}")
+        return "N/A"
 
 def get_rugcheck_data(token_address):
     def call():
-        token = rugcheck_login()
+        token = rugcheck_auth.login()
         if not token:
-            print("❌ No RugCheck token")
+            logging.error("❌ No RugCheck token")
             return None, None, None, 0
         url = f"https://api.rugcheck.xyz/v1/tokens/{token_address}/report/summary"
         headers = {"Authorization": f"Bearer {token}"}
@@ -166,18 +208,18 @@ def get_rugcheck_data(token_address):
                 holders = data.get("holders", 0) or 0
                 return score, honeypot, lp_locked, holders
             else:
-                print(f"❌ RugCheck data error: {response.status_code} {response.text}")
+                logging.error(f"❌ RugCheck data error: {response.status_code} {response.text}")
         except Exception as e:
-            print(f"❌ RugCheck API error: {e}")
+            logging.error(f"❌ RugCheck API error: {e}")
         return None, None, None, 0
     try:
         result = call()
         if result == (None, None, None, 0):
             result = call()
         return result
-    except Exception:
+    except Exception as e:
+        logging.error(f"❌ RugCheck call error: {e}")
         return None, None, None, 0
-# ====== FIN INTEGRATION RUGCHECK AUTH SOLANA ======
 
 def get_bonding_curve(token_address):
     try:
@@ -187,7 +229,8 @@ def get_bonding_curve(token_address):
         data = response.json()
         percentage = float(data.get("bondingCurve", {}).get("percentageComplete", 0.0)) * 100
         return round(percentage, 2)
-    except Exception:
+    except Exception as e:
+        logging.error(f"❌ Bonding curve error: {e}")
         return None
 
 def get_top_holders(token_address):
@@ -199,7 +242,8 @@ def get_top_holders(token_address):
         percentages = [round(h.get("share", 0) * 100, 2) for h in holders]
         total = round(sum(percentages), 2)
         return total, percentages
-    except Exception:
+    except Exception as e:
+        logging.error(f"❌ Top holders error: {e}")
         return None, []
 
 def get_smart_wallet_buy(token_address, current_mc, wallet_stats):
@@ -224,7 +268,7 @@ def get_smart_wallet_buy(token_address, current_mc, wallet_stats):
                 })
                 return amount_formatted, to_wallet, wallet_stats
     except Exception as e:
-        print("❌ Helius Error:", e)
+        logging.error("❌ Helius Error: %s", e)
     return None, None, wallet_stats
 
 def update_wallet_winrate(wallet_stats, tracking):
@@ -269,10 +313,9 @@ def send_telegram_message(message, token_address):
         requests.post(url, json=payload, timeout=10)
         time.sleep(2)
     except Exception as e:
-        print("❌ Telegram error:", e)
+        logging.error("❌ Telegram error: %s", e)
 
 def search_twitter_mentions(token_name, ticker):
-    # Placeholder: tu peux améliorer avec une vraie API Twitter/X
     return "N/A"
 
 def generate_progress_bar(percentage, width=20):
@@ -304,16 +347,16 @@ def get_wallet_deployment_stats(wallet_address):
         last_mc = cs_data.get("fullyDilutedValuation", 0)
         return last_symbol, len(deployed_tokens), int(last_mc)
     except Exception as e:
-        print("❌ Wallet deployer stats error:", e)
+        logging.error("❌ Wallet deployer stats error: %s", e)
         return None, 0, None
 
 def check_tokens():
-    print("🔍 Checking tokens...")
+    logging.info("🔍 Checking tokens...")
     try:
         response = requests.get(API_URL, headers=HEADERS, timeout=20)
         data = response.json().get("result", [])
     except Exception as e:
-        print("❌ Moralis API error:", e)
+        logging.error("❌ Moralis API error: %s", e)
         time.sleep(300)
         return
     memory = load_json(MEMORY_FILE)
@@ -322,7 +365,7 @@ def check_tokens():
     now = time.time()
 
     for token in data:
-        print(f"🔎 Token found: {token.get('symbol', 'N/A')} — MC: {token.get('fullyDilutedValuation')} — Holders: {token.get('holders')}")
+        logging.info(f"🔎 Token found: {token.get('symbol', 'N/A')} — MC: {token.get('fullyDilutedValuation')} — Holders: {token.get('holders')}")
         token_address = token.get("tokenAddress")
         if not token_address:
             continue
@@ -333,18 +376,18 @@ def check_tokens():
         rugscore, honeypot, lp_locked, holders_rug = get_rugcheck_data(token_address)
         holders = holders_rug or token.get('holders', 0)
         if mc < 45000 or lq < 8000 or (holders != 0 and holders < 80):
-            print("❌ Filtered out due to MC, liquidity or holders")
+            logging.info("❌ Filtered out due to MC, liquidity or holders")
             continue
         if honeypot:
-            print("⚠️ Honeypot detected, skipping token")
+            logging.info("⚠️ Honeypot detected, skipping token")
             memory[token_address] = now
             continue
         if not lp_locked:
-            print("❌ LP not locked – token skipped")
+            logging.info("❌ LP not locked – token skipped")
             memory[token_address] = now
             continue
         if rugscore is not None and rugscore < 40:
-            print(f"❌ Rugscore too low ({rugscore}) – skipping token")
+            logging.info(f"❌ Rugscore too low ({rugscore}) – skipping token")
             memory[token_address] = now
             continue
 
@@ -399,7 +442,6 @@ def check_tokens():
 `{token_address}`
 """
 
-        # Wallet deployer history
         if wallet:
             prev_symbol, launch_count, prev_mc = get_wallet_deployment_stats(wallet)
             if prev_symbol:
@@ -420,13 +462,12 @@ def check_tokens():
                 msg += " 📈 +50% since first call!"
 
         send_telegram_message(msg, token_address)
-        print(f"✅ Telegram message sent for token: {symbol}")
+        logging.info(f"✅ Telegram message sent for token: {symbol}")
 
     save_json(memory, MEMORY_FILE)
     save_json(tracking, TRACKING_FILE)
     save_json(wallet_stats, WALLET_STATS_FILE)
 
-    # 1h follow-up scan for performance messages
     for tracked_token, info in tracking.items():
         ts = info.get("timestamp")
         if not ts or (now - ts) < 3600 or (now - ts) > 4000:
@@ -466,7 +507,6 @@ def webhook():
         send_simple_message("🤖 Unknown command. Try /help", chat_id)
     return jsonify({"status": "ok"})
 
-# ==== INTEGRATION OPENAI v1+ AVEC SECRET FILE ====
 from openai import OpenAI
 
 def read_secret_file(path):
@@ -474,11 +514,11 @@ def read_secret_file(path):
         with open(path) as f:
             return f.read().strip()
     except Exception as e:
-        print(f"Erreur lecture secret file {path} :", e)
+        logging.error(f"Erreur lecture secret file {path} : {e}")
         return None
 
 openai_api_key = read_secret_file("/etc/secrets/OPENAI_API_KEY")
-print("DEBUG OPENAI_API_KEY (file):", repr(openai_api_key))
+logging.debug("DEBUG OPENAI_API_KEY (file): %r", openai_api_key)
 if not openai_api_key:
     raise RuntimeError(
         "❌ ERREUR : la clé OpenAI n'est pas trouvée dans le secret file /etc/secrets/OPENAI_API_KEY. "
@@ -495,7 +535,7 @@ def ask_gpt(prompt):
                     "role": "system",
                     "content": (
                         "Tu es un expert en trading crypto spécialisé dans les tokens ultra-récents sur Pump.fun (Solana). "
-                        "Tu as l'expérience de TendersAlt : tu appliques des stratégies simples, sans émotions, en t'appuyant sur des probabilités, des setups Fibonacci, et l'observation des patterns. "
+                        "Tu as l'expérience de TendersAlt : tu appliques des stratégies simples, sans émotions, en t'appuyant sur des probabilités, des setups Fibonacci, et l'observation des wallets. "
                         "Analyse objectivement, sois direct, concis, stratégique."
                     )
                 },
@@ -508,6 +548,7 @@ def ask_gpt(prompt):
         )
         return response.choices[0].message.content.strip()
     except Exception as e:
+        logging.error("Error calling GPT: %s", e)
         return f"Error calling GPT: {e}"
 
 @app.route("/analyze", methods=["GET"])
@@ -516,7 +557,6 @@ def analyze_token():
     if not token_address:
         return "Token address missing", 400
 
-    # 1/ Cherche dans le tracking
     tracking = load_json(TRACKING_FILE)
     token_data = tracking.get(token_address)
     if token_data:
@@ -526,7 +566,6 @@ def analyze_token():
         volume = token_data.get('volume', 'N/A')
         holders = token_data.get('holders', 'N/A')
     else:
-        # 2/ Sinon, cherche en live chez Moralis
         moralis_url = "https://solana-gateway.moralis.io/token/mainnet/exchange/pumpfun/graduated?limit=100"
         headers = {"Accept": "application/json", "X-API-Key": API_KEY}
         try:
@@ -545,7 +584,6 @@ def analyze_token():
         volume = moralis_data.get('liquidity', 'N/A')
         holders = moralis_data.get('holders', 'N/A')
 
-    # Infos annexes live
     rugscore, honeypot, lp_locked, holders_rug = get_rugcheck_data(token_address)
     bonding_percent = get_bonding_curve(token_address)
     top_total, top_list = get_top_holders(token_address)
@@ -556,7 +594,7 @@ def analyze_token():
     top5_distribution = " | ".join([f"{p}%" for p in (top_list[:5] if top_list else [])]) or "N/A"
 
     prompt = f"""
-Tu es un expert en trading crypto spécialisé dans les tokens ultra-récents sur Pump.fun (Solana). Tu as l'expérience de TendersAlt : tu appliques des stratégies simples, sans émotions, en t'appuyant sur des probabilités, des setups Fibonacci, et l'observation des patterns.
+Tu es un expert en trading crypto spécialisé dans les tokens ultra-récents sur Pump.fun (Solana). Tu as l'expérience de TendersAlt : tu appliques des stratégies simples, sans émotions, en t'appuyant sur des probabilités, des setups Fibonacci, et l'observation des wallets.
 
 Analyse ce token objectivement en te basant sur les infos suivantes :
 
@@ -595,7 +633,6 @@ Sois direct, concis, stratégique, comme si tu devais conseiller un trader qui n
     })
 
 def start_loop():
-    # Envoi automatique à 6h et 20h
     current_time = datetime.now()
     if current_time.hour in [6, 20] and current_time.minute < 2:
         send_daily_winners()
@@ -623,5 +660,6 @@ def send_daily_winners():
         send_simple_message(msg.strip(), CHAT_ID)
 
 if __name__ == "__main__":
+    logging.info(f"Bot lancé depuis : {os.getcwd()}")
     Thread(target=run_flask, daemon=True).start()
     start_loop()
