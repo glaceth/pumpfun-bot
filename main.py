@@ -174,7 +174,7 @@ def send_telegram_message(message, token_address):
             {"text": "🌐 Pump.fun", "url": f"https://pump.fun/{token_address}"},
             {"text": "🧪 Scam Check", "url": f"https://ai.scamr.xyz/token/{token_address}"}
         ], [
-            {"text": "🔍 RugCheck", "url": f"https://app.rugcheck.xyz/token/{token_address}"},
+            {"text": "🔍 RugCheck", "url": f"https://rugcheck.xyz/tokens/{token_address}"},
             {"text": "🗺️ BubbleMaps", "url": f"https://app.bubblemaps.io/sol/token/{token_address}"}
         ], [
             {"text": "📊 Axiom (Ref)", "url": f"https://axiom.trade/@glace"}
@@ -194,7 +194,7 @@ def send_telegram_message(message, token_address):
 
 def search_twitter_mentions(symbol):
     if symbol:
-        return f"[🔗 Rechercher ${symbol} sur X](https://twitter.com/search?q=%24{symbol}&src=typed_query)"
+        return f"https://twitter.com/search?q=%24{symbol}&src=typed_query"
     return ""
 
 def check_tokens():
@@ -220,7 +220,6 @@ def check_tokens():
         mc = float(token.get("fullyDilutedValuation") or 0)
         lq = float(token.get("liquidity") or 0)
 
-        # Extraction RugCheck avancée
         rugscore, honeypot, lp_locked, holders, volume, top_holders, freeze_removed, mint_revoked = get_rugcheck_data(token_address)
         logging.info(f"🔎 Token found: {symbol} — MC: {mc} — Holders: {holders}")
 
@@ -260,14 +259,11 @@ def check_tokens():
             msg += "\n".join([f"{i+1}. {pct}%" for i, pct in enumerate(top_holders)])
             msg += "\n"
         msg += "\n"
-        if token_address:
-            msg += f"🧠 *Insider Graph:* [Voir le graphe BubbleMap](https://app.rugcheck.xyz/token/{token_address}/insiders)\n"
-        msg += "\n"
+        # Ajout du message Check X (Twitter)
+        if symbol:
+            msg += f"🔎 *Check X:* [Recherche X ${symbol}](https://twitter.com/search?q=%24{symbol}&src=typed_query)\n\n"
         msg += "📍 *Liens Utiles:*\n"
-        msg += f"- 🌐 Pump.fun: [pump.fun/{token_address}](https://pump.fun/{token_address})\n"
-        msg += f"- 🧪 Scam Check: [Scamr.xyz](https://ai.scamr.xyz/token/{token_address})\n"
-        msg += f"- 🔍 RugCheck: [rugcheck.xyz](https://app.rugcheck.xyz/token/{token_address})\n"
-        msg += f"- 🗺️ BubbleMaps: [bubblemaps.io](https://app.bubblemaps.io/sol/token/{token_address})\n"
+        msg += f"- 🌐 Pump.fun: pump.fun/{token_address}\n"
         msg += "\n"
         if token_address:
             msg += "🧬 *Adresse du Token:*\n"
