@@ -88,10 +88,10 @@ def get_scamr_holders(token_address):
         for line in text.splitlines():
             if "Score:" in line and any(char.isdigit() for char in line):
                 return line.strip().split("Score:")[-1].strip()
-        return "N/A"
+        return None
     except Exception as e:
         logging.error(f"❌ Scamr error: {e}")
-        return "N/A"
+        return None
 
 def get_rugcheck_data(token_address):
     url = f"https://api.rugcheck.xyz/v1/tokens/{token_address}/report"
@@ -116,11 +116,6 @@ def get_rugcheck_data(token_address):
         return None, None, None, None
 
 def get_rugcheck_holders_with_retry(token_address, max_retries=15, delay=2):
-    """
-    Essaie de récupérer le nombre de holders via RugCheck,
-    en attendant jusqu'à max_retries * delay secondes.
-    Retourne None si l'info reste indisponible.
-    """
     for attempt in range(max_retries):
         _, _, _, holders = get_rugcheck_data(token_address)
         if holders and holders > 0:
@@ -147,11 +142,10 @@ def get_top_holders(token_address):
         data = response.json()
         holders = data.get("holders", [])[:5]
         percentages = [round(h.get("share", 0) * 100, 2) for h in holders]
-        total = round(sum(percentages), 2)
-        return total, percentages
+        return percentages
     except Exception as e:
         logging.error(f"❌ Top holders error: {e}")
-        return None, []
+        return []
 
 def get_smart_wallet_buy(token_address, current_mc, wallet_stats):
     try:
@@ -200,14 +194,15 @@ def send_telegram_message(message, token_address):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     keyboard = {
         "inline_keyboard": [[
-            {"text": "🔗 Pump.fun", "url": f"https://pump.fun/{token_address}"},
-            {"text": "🔍 Scamr", "url": f"https://ai.scamr.xyz/token/{token_address}"}
-        ], [
-            {"text": "🛡 Rugcheck", "url": f"https://rugcheck.xyz/tokens/{token_address}"},
-            {"text": "🧠 BubbleMaps", "url": f"https://app.bubblemaps.io/sol/token/{token_address}"}
-        ], [
-            {"text": "💹 Axiom (ref)", "url": f"https://axiom.trade/@glace"},
             {"text": "🤖 Analyze with AI", "url": f"https://pumpfun-bot-1.onrender.com/analyze?token={token_address}"}
+        ], [
+            {"text": "🌐 Pump.fun", "url": f"https://pump.fun/{token_address}"},
+            {"text": "🧪 Scam Check", "url": f"https://ai.scamr.xyz/token/{token_address}"}
+        ], [
+            {"text": "🔍 RugCheck", "url": f"https://app.rugcheck.xyz/token/{token_address}"},
+            {"text": "🗺️ BubbleMaps", "url": f"https://app.bubblemaps.io/sol/token/{token_address}"}
+        ], [
+            {"text": "📊 Axiom (Ref)", "url": f"https://axiom.trade/@glace"}
         ]]
     }
     payload = {
@@ -222,8 +217,11 @@ def send_telegram_message(message, token_address):
     except Exception as e:
         logging.error("❌ Telegram error: %s", e)
 
-def search_twitter_mentions(token_name, ticker):
-    return "N/A"
+def search_twitter_mentions(symbol):
+    # Retourne un lien vers la recherche X (Twitter) si symbol existe
+    if symbol:
+        return f"[🔗 Rechercher ${symbol} sur X](https://twitter.com/search?q=%24{symbol}&src=typed_query)"
+    return ""
 
 def generate_progress_bar(percentage, width=20):
     filled = int(percentage / 100 * width)
@@ -275,12 +273,11 @@ def check_tokens():
         token_address = token.get("tokenAddress")
         if not token_address:
             continue
-        name = token.get("name", "N/A")
-        symbol = token.get("symbol", "N/A")
+        name = token.get("name", "")
+        symbol = token.get("symbol", "")
         mc = float(token.get("fullyDilutedValuation") or 0)
         lq = float(token.get("liquidity") or 0)
 
-        # --- NOUVEAU : attendre holders dispo avant de continuer
         holders = get_rugcheck_holders_with_retry(token_address, max_retries=15, delay=2)
         if holders is None:
             logging.info(f"⏳ Holders non trouvés pour {symbol} ({token_address}), token ignoré.")
@@ -306,74 +303,52 @@ def check_tokens():
             continue
 
         bonding_percent = get_bonding_curve(token_address)
-        bonding_bar = generate_progress_bar(bonding_percent) if bonding_percent is not None else "N/A"
-        top_total, top_list = get_top_holders(token_address)
-        top_display = " | ".join([f"{p}%" for p in top_list]) if top_list else "N/A"
-        mentions = search_twitter_mentions(name, symbol)
-        smart_buy, wallet, wallet_stats = get_smart_wallet_buy(token_address, mc, wallet_stats)
-        winrates = update_wallet_winrate(wallet_stats, tracking)
-        winrate = winrates.get(wallet, 0) if wallet else 0
+        top_list = get_top_holders(token_address)
+        top_holders_section = ""
+        if top_list and len(top_list) >= 1:
+            top_holders_section = "\n".join([f"{i+1}. {p}%" for i, p in enumerate(top_list[:5])])
+
+        mentions_section = search_twitter_mentions(symbol)
+        bubble_map_link = f"https://app.rugcheck.xyz/token/{token_address}/insiders"
+        links_section = f"""- 🌐 Pump.fun: [pump.fun/{token_address}](https://pump.fun/{token_address})
+- 🧪 Scam Check: [Scamr.xyz](https://ai.scamr.xyz/token/{token_address})
+- 🔍 RugCheck: [rugcheck.xyz](https://app.rugcheck.xyz/token/{token_address})
+- 🗺️ BubbleMaps: [bubblemaps.io](https://app.bubblemaps.io/sol/token/{token_address})
+- 📊 Axiom (Ref): [Trade sur Axiom](https://axiom.trade/@glace)"""
+
+        msg = "🚨 *New Token Detected!*\n\n"
+        if name: msg += f"💰 *Name:* {name}\n"
+        if symbol: msg += f"🪙 *Symbol:* ${symbol}\n"
+        if mc: msg += f"📈 *Market Cap:* ${int(mc):,}\n"
+        if lq: msg += f"📊 *Volume (1h):* ${int(lq):,}\n"
+        if holders: msg += f"👥 *Holders:* {holders}\n"
+        msg += "\n"
+        msg += "🛡️ *Security Check (RugCheck)*\n"
+        msg += f"- {'✅' if lp_locked else '❌'} Liquidity Burned\n"
+        msg += "- ✅ Freeze Authority Removed\n"
+        msg += "- ✅ Mint Authority Revoked\n"
+        msg += f"- {'🔒' if lp_locked else '🔓'} LP Locked\n"
+        if rugscore is not None: msg += f"- 🔥 *RugScore:* {rugscore}/100\n"
+        if honeypot is not None: msg += f"- {'❌' if honeypot else '✅'} Honeypot: {'Yes' if honeypot else 'No'}\n"
+        msg += "\n"
+        if top_holders_section:
+            msg += "📊 *Top Holders:*\n"
+            msg += f"{top_holders_section}\n"
+        msg += "\n"
+        if token_address:
+            msg += f"🧠 *Insider Graph:* [Voir le graphe BubbleMap]({bubble_map_link})\n"
+        if mentions_section:
+            msg += f"\n🔎 *Mentions X:* {mentions_section}\n"
+        msg += "\n"
+        msg += "📍 *Liens Utiles:*\n"
+        msg += f"{links_section}\n"
+        msg += "\n"
+        if token_address:
+            msg += "🧬 *Adresse du Token:*\n"
+            msg += f"`{token_address}`\n"
 
         memory[token_address] = now
         tracking[token_address] = {"symbol": symbol, "initial": mc, "current": mc, "alerts": [], "timestamp": now}
-
-        msg = f"""🔍 *NEW TOKEN DETECTED*
-
-💠 *Token:* ${symbol}
-🧾 *Address:* `{token_address}`
-
-💰 *Market Cap:* ${int(mc):,}
-📊 *Volume 1h:* ${int(lq):,}
-👥 *Holders:* {holders}
-
-🧠 *Mentions X: {mentions}*
-
-📈 *Bonding Progress:* {bonding_percent or 'N/A'}%
-{bonding_bar}
-
-🛡 *Security Check (Rugcheck.xyz)*
-- 🔥 Liquidity Burned: ✅
-- ❄️ Freeze Authority: ✅
-- ➕ Mint Authority: ✅
-- 🧮 Rugscore: {rugscore or 'N/A'} {'🟢' if rugscore and rugscore >= 80 else '🟡' if rugscore and rugscore >= 60 else '🟠' if rugscore and rugscore >= 40 else '🔴' if rugscore else ''}
-- ✅ Token SAFE – LP Locked, No Honeypot
-
-🐳 *Smart Wallet Buy:* {smart_buy or 'N/A'} tokens
-- Winrate: {winrate}% {'🟢 Ultra Smart' if winrate and winrate >= 80 else '🟡 Smart' if winrate and winrate >= 60 else '🔴 Risky Wallet' if winrate and winrate < 30 else ''}
-
-📦 *Top 10 Holders:* {top_total or 'N/A'}%
-{top_display}
-🧑‍💻 = Dev wallet, ✨ = New wallet (< 2 tokens)
-
-🔗 *Links*
-- [Pump.fun](https://pump.fun/{token_address})
-- [Scamr](https://ai.scamr.xyz/token/{token_address})
-- [Rugcheck](https://rugcheck.xyz/tokens/{token_address})
-- [BubbleMaps](https://app.bubblemaps.io/sol/token/{token_address})
-- [Axiom (ref)](https://axiom.trade/@glace)
-
-📎 *Token address:*
-`{token_address}`
-"""
-
-        if wallet:
-            prev_symbol, launch_count, prev_mc = get_wallet_deployment_stats(wallet)
-            if prev_symbol:
-                msg += f"\n\nPrev Deployed: ${prev_symbol} (${prev_mc:,})"
-                msg += f"\n# of Launches: {launch_count}"
-                if launch_count > 20:
-                    msg += " 🧨 Serial Launcher"
-                elif launch_count == 1:
-                    msg += " 🆕 First Launch"
-
-        previous_ts = tracking.get(token_address, {}).get("timestamp")
-        if previous_ts and (now - previous_ts > 3600):
-            msg += f"\n\n Token previously detected {round((now - previous_ts) / 3600, 1)}h ago – new volume spike!"
-            mc_entry = tracking.get(token_address, {}).get("initial", mc)
-            if mc > mc_entry * 2:
-                msg += " 🚀 x2+ pump since first call!"
-            elif mc > mc_entry * 1.5:
-                msg += " 📈 +50% since first call!"
 
         send_telegram_message(msg, token_address)
         logging.info(f"✅ Telegram message sent for token: {symbol}")
@@ -381,21 +356,6 @@ def check_tokens():
     save_json(memory, MEMORY_FILE)
     save_json(tracking, TRACKING_FILE)
     save_json(wallet_stats, WALLET_STATS_FILE)
-
-    for tracked_token, info in tracking.items():
-        ts = info.get("timestamp")
-        if not ts or (now - ts) < 3600 or (now - ts) > 4000:
-            continue
-        mc_entry = info.get("initial", 0)
-        mc_now = info.get("current", mc_entry)
-        symbol_tracked = info.get("symbol", "N/A")
-        if mc_now > mc_entry and "soar" not in info["alerts"]:
-            multiplier = round(mc_now / mc_entry, 1)
-            if multiplier >= 2:
-                message = f"🚀🚀🚀 ${symbol_tracked} soared by X{multiplier} in an hour since it was called! 🌕"
-                send_telegram_message(message, tracked_token)
-                info["alerts"].append("soar")
-    save_json(tracking, TRACKING_FILE)
 
 def run_flask():
     port = int(os.environ.get("PORT", 10000))
@@ -500,11 +460,11 @@ def analyze_token():
 
     rugscore, honeypot, lp_locked, holders_rug = get_rugcheck_data(token_address)
     bonding_percent = get_bonding_curve(token_address)
-    top_total, top_list = get_top_holders(token_address)
+    top_list = get_top_holders(token_address)
     scamr_note = get_scamr_holders(token_address)
     lp_status = "Locked" if lp_locked else "Not locked"
     smart_wallets = "Oui" if holders_rug and holders_rug > 100 else "Non"
-    mentions = "N/A"
+    mentions = search_twitter_mentions(symbol)
     top5_distribution = " | ".join([f"{p}%" for p in (top_list[:5] if top_list else [])]) or "N/A"
 
     prompt = f"""
