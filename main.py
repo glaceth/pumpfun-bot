@@ -96,28 +96,46 @@ def get_scamr_holders(token_address):
 def get_rugcheck_data(token_address):
     url = f"https://api.rugcheck.xyz/v1/tokens/{token_address}/report"
     try:
-        resp = requests.get(url, timeout=5)
+        resp = requests.get(url, timeout=8)
         if resp.status_code == 200:
             data = resp.json()
-            score = data.get("score_normalised")
+            score = data.get("score_normalised") or data.get("score")
+            honeypot = False
             risks = data.get("risks", [])
-            honeypot = any("honeypot" in r["name"].lower() for r in risks)
-            lp_locked = all(
-                "liquidity" not in r["name"].lower() or "not" not in r["description"].lower()
-                for r in risks
-            )
-            holders = data.get("holders", None)
-            return score, honeypot, lp_locked, holders
+            for r in risks:
+                if "honeypot" in r.get("name", "").lower():
+                    honeypot = True
+            lp_locked = False
+            for market in data.get("markets", []):
+                lp = market.get("lp", {})
+                if lp.get("lpLockedPct", 0) >= 75 and lp.get("lpLockedUSD", 0) > 2500:
+                    lp_locked = True
+            holders = data.get("totalHolders") or data.get("holders")
+            volume = None
+            for market in data.get("markets", []):
+                lp = market.get("lp", {})
+                if lp.get("quoteUSD"):
+                    volume = lp.get("quoteUSD")
+                    break
+            if not volume:
+                volume = data.get("totalMarketLiquidity")
+            top_holders = []
+            for h in data.get("topHolders", [])[:5]:
+                pct = round(h.get("pct", 0), 1)
+                top_holders.append(pct)
+            freeze_removed = data.get("freezeAuthority") is None
+            mint_revoked = data.get("mintAuthority") is None
+            return score, honeypot, lp_locked, holders, volume, top_holders, freeze_removed, mint_revoked
         else:
             logging.error(f"RugCheck public error: {resp.status_code} {resp.text}")
-            return None, None, None, None
+            return None, None, None, None, None, [], None, None
     except Exception as e:
         logging.error(f"RugCheck API error: {e}")
-        return None, None, None, None
+        return None, None, None, None, None, [], None, None
 
 def get_rugcheck_holders_with_retry(token_address, max_retries=15, delay=2):
     for attempt in range(max_retries):
-        _, _, _, holders = get_rugcheck_data(token_address)
+        _, _, _, holders, *_ = get_rugcheck_data(token_address)
         if holders and holders > 0:
             return holders
         time.sleep(delay)
@@ -147,49 +165,6 @@ def get_top_holders(token_address):
         logging.error(f"❌ Top holders error: {e}")
         return []
 
-def get_smart_wallet_buy(token_address, current_mc, wallet_stats):
-    try:
-        url = f"https://api.helius.xyz/v0/tokens/{token_address}/transfers?api-key={HELIUS_API_KEY}&limit=50"
-        response = requests.get(url, timeout=10)
-        if response.status_code != 200:
-            return None, None, wallet_stats
-        transfers = response.json()
-        for tx in transfers:
-            to_wallet = tx.get("toUserAccount")
-            amount = int(tx.get("tokenAmount", {}).get("amount", 0))
-            decimals = int(tx.get("tokenAmount", {}).get("decimals", 9))
-            amount_formatted = round(amount / (10 ** decimals), 2)
-            if amount_formatted >= 5000 and to_wallet:
-                if to_wallet not in wallet_stats:
-                    wallet_stats[to_wallet] = {"buys": []}
-                wallet_stats[to_wallet]["buys"].append({
-                    "token": token_address,
-                    "mc_entry": current_mc,
-                    "mc_now": current_mc
-                })
-                return amount_formatted, to_wallet, wallet_stats
-    except Exception as e:
-        logging.error("❌ Helius Error: %s", e)
-    return None, None, wallet_stats
-
-def update_wallet_winrate(wallet_stats, tracking):
-    winrates = {}
-    for wallet, data in wallet_stats.items():
-        wins = 0
-        total = 0
-        for entry in data["buys"]:
-            token = entry["token"]
-            mc_entry = entry["mc_entry"]
-            mc_now = tracking.get(token, {}).get("current", mc_entry)
-            entry["mc_now"] = mc_now
-            total += 1
-            if mc_now >= 2 * mc_entry or mc_now >= 1_000_000:
-                wins += 1
-        if total > 0:
-            rate = int((wins / total) * 100)
-            winrates[wallet] = rate
-    return winrates
-
 def send_telegram_message(message, token_address):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     keyboard = {
@@ -218,42 +193,9 @@ def send_telegram_message(message, token_address):
         logging.error("❌ Telegram error: %s", e)
 
 def search_twitter_mentions(symbol):
-    # Retourne un lien vers la recherche X (Twitter) si symbol existe
     if symbol:
         return f"[🔗 Rechercher ${symbol} sur X](https://twitter.com/search?q=%24{symbol}&src=typed_query)"
     return ""
-
-def generate_progress_bar(percentage, width=20):
-    filled = int(percentage / 100 * width)
-    empty = width - filled
-    return "▓" * filled + "░" * empty
-
-def get_wallet_deployment_stats(wallet_address):
-    try:
-        url = f"https://api.helius.xyz/v0/addresses/{wallet_address}/transactions?api-key={HELIUS_API_KEY}&limit=20"
-        response = requests.get(url, timeout=10)
-        txs = response.json()
-        deployed_tokens = []
-        for tx in txs:
-            if "tokenTransfers" in tx:
-                for transfer in tx["tokenTransfers"]:
-                    if transfer.get("type") == "mint":
-                        token_address = transfer.get("mint")
-                        if token_address:
-                            deployed_tokens.append(token_address)
-        if not deployed_tokens:
-            return None, 0, None
-        last_token = deployed_tokens[0]
-        cs_url = f"https://api.callstaticrpc.com/pumpfun/v1/token/{last_token}"
-        headers = {"Authorization": f"Bearer {CALLSTATIC_API}"}
-        cs_res = requests.get(cs_url, headers=headers, timeout=10)
-        cs_data = cs_res.json()
-        last_symbol = cs_data.get("symbol", "N/A")
-        last_mc = cs_data.get("fullyDilutedValuation", 0)
-        return last_symbol, len(deployed_tokens), int(last_mc)
-    except Exception as e:
-        logging.error("❌ Wallet deployer stats error: %s", e)
-        return None, 0, None
 
 def check_tokens():
     logging.info("🔍 Checking tokens...")
@@ -278,15 +220,11 @@ def check_tokens():
         mc = float(token.get("fullyDilutedValuation") or 0)
         lq = float(token.get("liquidity") or 0)
 
-        holders = get_rugcheck_holders_with_retry(token_address, max_retries=15, delay=2)
-        if holders is None:
-            logging.info(f"⏳ Holders non trouvés pour {symbol} ({token_address}), token ignoré.")
-            continue
-
-        rugscore, honeypot, lp_locked, _ = get_rugcheck_data(token_address)
+        # Extraction RugCheck avancée
+        rugscore, honeypot, lp_locked, holders, volume, top_holders, freeze_removed, mint_revoked = get_rugcheck_data(token_address)
         logging.info(f"🔎 Token found: {symbol} — MC: {mc} — Holders: {holders}")
 
-        if mc < 45000 or lq < 8000 or holders < 80:
+        if mc < 45000 or lq < 8000 or (holders is not None and holders < 80):
             logging.info("❌ Filtered out due to MC, liquidity or holders")
             continue
         if honeypot:
@@ -302,46 +240,34 @@ def check_tokens():
             memory[token_address] = now
             continue
 
-        bonding_percent = get_bonding_curve(token_address)
-        top_list = get_top_holders(token_address)
-        top_holders_section = ""
-        if top_list and len(top_list) >= 1:
-            top_holders_section = "\n".join([f"{i+1}. {p}%" for i, p in enumerate(top_list[:5])])
-
-        mentions_section = search_twitter_mentions(symbol)
-        bubble_map_link = f"https://app.rugcheck.xyz/token/{token_address}/insiders"
-        links_section = f"""- 🌐 Pump.fun: [pump.fun/{token_address}](https://pump.fun/{token_address})
-- 🧪 Scam Check: [Scamr.xyz](https://ai.scamr.xyz/token/{token_address})
-- 🔍 RugCheck: [rugcheck.xyz](https://app.rugcheck.xyz/token/{token_address})
-- 🗺️ BubbleMaps: [bubblemaps.io](https://app.bubblemaps.io/sol/token/{token_address})
-- 📊 Axiom (Ref): [Trade sur Axiom](https://axiom.trade/@glace)"""
-
         msg = "🚨 *New Token Detected!*\n\n"
         if name: msg += f"💰 *Name:* {name}\n"
         if symbol: msg += f"🪙 *Symbol:* ${symbol}\n"
         if mc: msg += f"📈 *Market Cap:* ${int(mc):,}\n"
-        if lq: msg += f"📊 *Volume (1h):* ${int(lq):,}\n"
+        if volume: msg += f"📊 *Volume (1h):* ${int(volume):,}\n"
         if holders: msg += f"👥 *Holders:* {holders}\n"
         msg += "\n"
         msg += "🛡️ *Security Check (RugCheck)*\n"
         msg += f"- {'✅' if lp_locked else '❌'} Liquidity Burned\n"
-        msg += "- ✅ Freeze Authority Removed\n"
-        msg += "- ✅ Mint Authority Revoked\n"
+        msg += f"- {'✅' if freeze_removed else '❌'} Freeze Authority Removed\n"
+        msg += f"- {'✅' if mint_revoked else '❌'} Mint Authority Revoked\n"
         msg += f"- {'🔒' if lp_locked else '🔓'} LP Locked\n"
         if rugscore is not None: msg += f"- 🔥 *RugScore:* {rugscore}/100\n"
         if honeypot is not None: msg += f"- {'❌' if honeypot else '✅'} Honeypot: {'Yes' if honeypot else 'No'}\n"
         msg += "\n"
-        if top_holders_section:
+        if top_holders:
             msg += "📊 *Top Holders:*\n"
-            msg += f"{top_holders_section}\n"
+            msg += "\n".join([f"{i+1}. {pct}%" for i, pct in enumerate(top_holders)])
+            msg += "\n"
         msg += "\n"
         if token_address:
-            msg += f"🧠 *Insider Graph:* [Voir le graphe BubbleMap]({bubble_map_link})\n"
-        if mentions_section:
-            msg += f"\n🔎 *Mentions X:* {mentions_section}\n"
+            msg += f"🧠 *Insider Graph:* [Voir le graphe BubbleMap](https://app.rugcheck.xyz/token/{token_address}/insiders)\n"
         msg += "\n"
         msg += "📍 *Liens Utiles:*\n"
-        msg += f"{links_section}\n"
+        msg += f"- 🌐 Pump.fun: [pump.fun/{token_address}](https://pump.fun/{token_address})\n"
+        msg += f"- 🧪 Scam Check: [Scamr.xyz](https://ai.scamr.xyz/token/{token_address})\n"
+        msg += f"- 🔍 RugCheck: [rugcheck.xyz](https://app.rugcheck.xyz/token/{token_address})\n"
+        msg += f"- 🗺️ BubbleMaps: [bubblemaps.io](https://app.bubblemaps.io/sol/token/{token_address})\n"
         msg += "\n"
         if token_address:
             msg += "🧬 *Adresse du Token:*\n"
@@ -458,7 +384,7 @@ def analyze_token():
         volume = moralis_data.get('liquidity', 'N/A')
         holders = moralis_data.get('holders', 'N/A')
 
-    rugscore, honeypot, lp_locked, holders_rug = get_rugcheck_data(token_address)
+    rugscore, honeypot, lp_locked, holders_rug, *_ = get_rugcheck_data(token_address)
     bonding_percent = get_bonding_curve(token_address)
     top_list = get_top_holders(token_address)
     scamr_note = get_scamr_holders(token_address)
