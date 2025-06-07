@@ -238,7 +238,7 @@ def check_tokens():
         # -------- PATCH RUGSCORE < 40 -------- #
         attention = ""
         if rugscore is not None and rugscore < 40:
-            if holders is not None and holders >= 900:
+            if holders is not None and holders >= 500:
                 logging.info(f"⚠️ Rugscore faible ({rugscore}) mais {holders} holders, token envoyé avec avertissement")
                 attention = f"\n⚠️ *ATTENTION : RugScore faible ({rugscore}/100) — DYOR !*"
             else:
