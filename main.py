@@ -20,7 +20,7 @@ logging.info("✅ Fichier lancé correctement — import os OK")
 app = Flask(__name__)
 
 # --- Authentification RugCheck robuste ---
-class RugCheckRateLimitError(Exception):
+class RugCheckRateLimitError(Exception):      
     pass
 
 class RugCheckAuthenticator:
@@ -55,6 +55,51 @@ class RugCheckAuthenticator:
         # Optionnel: à améliorer si tu veux vérifier l'expiration réelle du token
         return False
 
+    def rugcheck_login_request(self):
+        if not RUGCHECK_SOLANA_PRIVATE_KEY or not RUGCHECK_PUBLIC_ADDRESS:
+            logging.error("❌ RUGCHECK secrets missing (RUGCHECK_SOLANA_PRIVATE_KEY or RUGCHECK_PUBLIC_ADDRESS absent)")
+            return None
+        try:
+            try:
+                priv_bytes = bytes.fromhex(RUGCHECK_SOLANA_PRIVATE_KEY)
+            except Exception:
+                priv_bytes = base58.b58decode(RUGCHECK_SOLANA_PRIVATE_KEY)
+            if len(priv_bytes) == 32:
+                kp = Keypair.from_seed(priv_bytes)
+            elif len(priv_bytes) == 64:
+                kp = Keypair.from_bytes(priv_bytes)
+            else:
+                raise ValueError("La clé privée doit faire 32 ou 64 bytes")
+            public_key_str = str(kp.pubkey())
+            timestamp = int(time.time())
+            message_dict = {
+                "message": "Sign-in to Rugcheck.xyz",
+                "publicKey": public_key_str,
+                "timestamp": timestamp
+            }
+            to_sign = f"{message_dict['message']}|{message_dict['publicKey']}|{message_dict['timestamp']}".encode()
+            signature = kp.sign_message(to_sign)
+            signature_bytes = list(bytes(signature))
+            payload = {
+                "message": message_dict,
+                "signature": {"data": signature_bytes, "type": "ed25519"},
+                "wallet": public_key_str
+            }
+            url = "https://api.rugcheck.xyz/auth/login/solana"
+            resp = requests.post(url, json=payload, timeout=10)
+            if resp.status_code == 429:
+                raise RugCheckRateLimitError()
+            if resp.status_code == 200:
+                token = resp.json().get("token")
+                logging.info("✅ RugCheck login OK")
+                return token
+            else:
+                logging.error(f"❌ RugCheck login failed: {resp.status_code} {resp.text}")
+                return None
+        except Exception as e:
+            logging.exception(f"❌ RugCheck login error: {e}")
+            return None
+
 # --- Fin ajout authentification RugCheck robuste ---
 
 ADMIN_USER_ID = os.getenv("ADMIN_USER_ID", "Glacesol")
@@ -81,6 +126,8 @@ HELIUS_API_KEY = load_secret("/etc/secrets/HELIUS_API", "HELIUS_API_KEY")
 CALLSTATIC_API = load_secret("/etc/secrets/CALLSTATIC_API", "CALLSTATIC_API")
 
 # Correction ici : secrets Rugcheck gérés comme les autres
+RUGCHECK_SOLANA_PRIVATE_KEY = load_secret("/etc/secrets/RUGCHECK_SOLANA_PRIVATE_KEY", "RUGCHECK_SOLANA_PRIVATE_KEY")
+RUGCHECK_PUBLIC_ADDRESS = load_secret("/etc/secrets/RUGCHECK_PUBLIC_ADDRESS", "RUGCHECK_PUBLIC_ADDRESS")
 
 # --- Instanciation du nouvel authentificateur RugCheck ---
 rugcheck_auth = RugCheckAuthenticator()
@@ -318,7 +365,7 @@ def check_tokens():
     now = time.time()
 
     for token in data:
-        logging.info(f"🔎 Token found: {token.get('symbol', 'N/A')} — MC: {token.get('fullyDilutedValuation')} — Holders: {token.get('holders')}")
+        logging.info(f"🔎 Token found: {token.get('symbol', 'N/A')} — MC: {token.get('fullyDilutedValuation')} — Holders: None")
         token_address = token.get("tokenAddress")
         if not token_address:
             continue
@@ -616,53 +663,3 @@ if __name__ == "__main__":
     logging.info(f"Bot lancé depuis : {os.getcwd()}")
     Thread(target=run_flask, daemon=True).start()
     start_loop()
-
-
-RUG_CHECK_URL = "https://api.rugcheck.xyz/v1/tokens/{}/report"
-min_lp_locked_amount = 25000
-min_lp_locked_pct = 75
-max_risk_score = 501
-max_holder_pct = 20
-
-def fetch_token_data(token_address):
-    try:
-        response = requests.get(RUG_CHECK_URL.format(token_address))
-        response.raise_for_status()
-        return response.json()
-    except requests.RequestException as e:
-        print(f"Erreur lors de la récupération des données RugCheck pour {token_address}: {e}")
-        return None
-
-def check_top_holders(holders):
-    if not holders:
-        return False
-    for holder in holders:
-        if holder.get('pct', 0) > max_holder_pct:
-            return False
-    return True
-
-def check_lp_burned(markets):
-    if not markets:
-        return False
-    raydium_market = next((m for m in markets if m.get("marketType") == "raydium"), None)
-    if not raydium_market:
-        return False
-    lp = raydium_market.get('lp', {})
-    return (
-        lp.get('lpLocked', 0) > 0 and
-        lp.get('lpLockedUSD', 0) > min_lp_locked_amount and
-        lp.get('lpLockedPct', 0) > min_lp_locked_pct
-    )
-
-def check_max_risk_score(data):
-    return data.get('score', 0) <= max_risk_score
-
-def check_token_is_not_rug(token_address):
-    data = fetch_token_data(token_address)
-    if not data:
-        return False, None
-    top_holders_valid = check_top_holders(data.get('topHolders', []))
-    lp_burned = check_lp_burned(data.get('markets', []))
-    risk_score_ok = check_max_risk_score(data)
-    holders_count = data.get('holderCount', None)
-    return (top_holders_valid and lp_burned and risk_score_ok), holders_count
