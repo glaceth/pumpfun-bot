@@ -234,10 +234,18 @@ def check_tokens():
             logging.info("❌ LP not locked – token skipped")
             memory[token_address] = now
             continue
+
+        # -------- PATCH RUGSCORE < 40 -------- #
+        attention = ""
         if rugscore is not None and rugscore < 40:
-            logging.info(f"❌ Rugscore too low ({rugscore}) – skipping token")
-            memory[token_address] = now
-            continue
+            if holders is not None and holders >= 900:
+                logging.info(f"⚠️ Rugscore faible ({rugscore}) mais {holders} holders, token envoyé avec avertissement")
+                attention = f"\n⚠️ *ATTENTION : RugScore faible ({rugscore}/100) — DYOR !*"
+            else:
+                logging.info(f"❌ Rugscore too low ({rugscore}) – skipping token (holders: {holders})")
+                memory[token_address] = now
+                continue
+        # -------- FIN PATCH -------- #
 
         msg = "🚨 *New Token Detected!*\n\n"
         if name: msg += f"💰 *Name:* {name}\n"
@@ -253,6 +261,7 @@ def check_tokens():
         msg += f"- {'🔒' if lp_locked else '🔓'} LP Locked\n"
         if rugscore is not None: msg += f"- 🔥 *RugScore:* {rugscore}/100\n"
         if honeypot is not None: msg += f"- {'❌' if honeypot else '✅'} Honeypot: {'Yes' if honeypot else 'No'}\n"
+        msg += attention  # <--- AVERTISSEMENT SI NÉCESSAIRE
         msg += "\n"
         if top_holders:
             msg += "📊 *Top Holders:*\n"
@@ -331,7 +340,7 @@ def ask_gpt(prompt):
                     "role": "system",
                     "content": (
                         "Tu es un expert en trading crypto spécialisé dans les tokens ultra-récents sur Pump.fun (Solana). "
-                        "Tu as l'expérience de TendersAlt : tu appliques des stratégies simples, sans émotions, en t'appuyant sur des probabilités, des setups Fibonacci, et l'observation des volumes. "
+                        "Tu as l'expérience de TendersAlt : tu appliques des stratégies simples, sans émotions, en t'appuyant sur des probabilités, des setups Fibonacci, et l'observation des wallets. "
                         "Analyse objectivement, sois direct, concis, stratégique."
                     )
                 },
@@ -390,7 +399,7 @@ def analyze_token():
     top5_distribution = " | ".join([f"{p}%" for p in (top_list[:5] if top_list else [])]) or "N/A"
 
     prompt = f"""
-Tu es un expert en trading crypto spécialisé dans les tokens ultra-récents sur Pump.fun (Solana). Tu as l'expérience de TendersAlt : tu appliques des stratégies simples, sans émotions, en t'appuyant sur des probabilités.
+Tu es un expert en trading crypto spécialisé dans les tokens ultra-récents sur Pump.fun (Solana). Tu as l'expérience de TendersAlt : tu appliques des stratégies simples, sans émotions, en t'appuyant sur des probabilités, des setups Fibonacci, et l'observation des wallets.
 Analyse ce token objectivement en te basant sur les infos suivantes :
 
 - Nom du token : {name}
