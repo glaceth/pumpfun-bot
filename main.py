@@ -220,6 +220,23 @@ def check_tokens():
         symbol = token.get("symbol", "")
         mc = float(token.get("fullyDilutedValuation") or 0)
         lq = float(token.get("liquidity") or 0)
+        # PATCH: récupération du timestamp pour "⏰ Launch"
+        created_at = token.get("createdAt") or token.get("timestamp") or token.get("launchDate")
+        launch_str = ""
+        if created_at:
+            try:
+                if int(created_at) > 1e12:
+                    created_at = int(created_at) / 1000
+                seconds = int(now - float(created_at))
+                minutes = seconds // 60
+                hours = minutes // 60
+                if hours > 0:
+                    launch_info = f"{hours}h {minutes % 60}min"
+                else:
+                    launch_info = f"{minutes}min"
+                launch_str = f"⏰ Launch: {launch_info} ago\n"
+            except Exception as e:
+                logging.warning(f"Erreur calcul launch_str: {e}")
 
         rugscore, honeypot, lp_locked, holders, volume, top_holders, freeze_removed, mint_revoked, risk_label = get_rugcheck_data(token_address)
         logging.info(f"🔎 Token found: {symbol} — MC: {mc} — Holders: {holders}")
@@ -246,7 +263,7 @@ def check_tokens():
         # -------- PATCH RUGSCORE < 40 -------- #
         attention = ""
         if rugscore is not None and rugscore < 40:
-            if holders is not None and holders >= 900:
+            if holders is not None and holders >= 500:
                 logging.info(f"⚠️ Rugscore faible ({rugscore}) mais {holders} holders, token envoyé avec avertissement")
                 attention = f"\n⚠️ *ATTENTION : RugScore faible ({rugscore}/100) — DYOR !*"
             else:
@@ -263,6 +280,7 @@ def check_tokens():
         if mc: msg += f"📈 *Market Cap:* ${int(mc):,}\n"
         if volume: msg += f"📊 *Volume (1h):* ${int(volume):,}\n"
         if holders: msg += f"👥 *Holders:* {holders}\n"
+        if launch_str: msg += launch_str
         msg += "\n"
         msg += "🛡️ *Security Check (RugCheck)*\n"
         msg += f"- {'✅' if lp_locked else '❌'} Liquidity Burned\n"
@@ -272,7 +290,7 @@ def check_tokens():
         if rugscore is not None: msg += f"- 🔥 *RugScore:* {rugscore}/100\n"
         if risk_label: msg += f"- 🏷️ *RugCheck Label:* {risk_label}\n"
         if honeypot is not None: msg += f"- {'❌' if honeypot else '✅'} Honeypot: {'Yes' if honeypot else 'No'}\n"
-        msg += attention  # <--- AVERTISSEMENT OU MESSAGE POSITIF
+        msg += attention
         msg += "\n"
         if top_holders:
             msg += "📊 *Top Holders:*\n"
