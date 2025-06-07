@@ -125,13 +125,15 @@ def get_rugcheck_data(token_address):
                 top_holders.append(pct)
             freeze_removed = data.get("freezeAuthority") is None
             mint_revoked = data.get("mintAuthority") is None
-            return score, honeypot, lp_locked, holders, volume, top_holders, freeze_removed, mint_revoked
+            # Récupération du label textuel
+            risk_label = data.get("risk_label") or data.get("riskLevel") or data.get("risk_level")
+            return score, honeypot, lp_locked, holders, volume, top_holders, freeze_removed, mint_revoked, risk_label
         else:
             logging.error(f"RugCheck public error: {resp.status_code} {resp.text}")
-            return None, None, None, None, None, [], None, None
+            return None, None, None, None, None, [], None, None, None
     except Exception as e:
         logging.error(f"RugCheck API error: {e}")
-        return None, None, None, None, None, [], None, None
+        return None, None, None, None, None, [], None, None, None
 
 def get_rugcheck_holders_with_retry(token_address, max_retries=15, delay=2):
     for attempt in range(max_retries):
@@ -220,7 +222,7 @@ def check_tokens():
         mc = float(token.get("fullyDilutedValuation") or 0)
         lq = float(token.get("liquidity") or 0)
 
-        rugscore, honeypot, lp_locked, holders, volume, top_holders, freeze_removed, mint_revoked = get_rugcheck_data(token_address)
+        rugscore, honeypot, lp_locked, holders, volume, top_holders, freeze_removed, mint_revoked, risk_label = get_rugcheck_data(token_address)
         logging.info(f"🔎 Token found: {symbol} — MC: {mc} — Holders: {holders}")
 
         if mc < 45000 or lq < 8000 or (holders is not None and holders < 80):
@@ -238,13 +240,15 @@ def check_tokens():
         # -------- PATCH RUGSCORE < 40 -------- #
         attention = ""
         if rugscore is not None and rugscore < 40:
-            if holders is not None and holders >= 500:
+            if holders is not None and holders >= 900:
                 logging.info(f"⚠️ Rugscore faible ({rugscore}) mais {holders} holders, token envoyé avec avertissement")
                 attention = f"\n⚠️ *ATTENTION : RugScore faible ({rugscore}/100) — DYOR !*"
             else:
                 logging.info(f"❌ Rugscore too low ({rugscore}) – skipping token (holders: {holders})")
                 memory[token_address] = now
                 continue
+        elif rugscore is not None and rugscore >= 70:
+            attention = f"\n✅ *RugScore élevé ({rugscore}/100) – plutôt rassurant, mais DYOR !*"
         # -------- FIN PATCH -------- #
 
         msg = "🚨 *New Token Detected!*\n\n"
@@ -260,15 +264,15 @@ def check_tokens():
         msg += f"- {'✅' if mint_revoked else '❌'} Mint Authority Revoked\n"
         msg += f"- {'🔒' if lp_locked else '🔓'} LP Locked\n"
         if rugscore is not None: msg += f"- 🔥 *RugScore:* {rugscore}/100\n"
+        if risk_label: msg += f"- 🏷️ *RugCheck Label:* {risk_label}\n"
         if honeypot is not None: msg += f"- {'❌' if honeypot else '✅'} Honeypot: {'Yes' if honeypot else 'No'}\n"
-        msg += attention  # <--- AVERTISSEMENT SI NÉCESSAIRE
+        msg += attention  # <--- AVERTISSEMENT OU MESSAGE POSITIF
         msg += "\n"
         if top_holders:
             msg += "📊 *Top Holders:*\n"
             msg += "\n".join([f"{i+1}. {pct}%" for i, pct in enumerate(top_holders)])
             msg += "\n"
         msg += "\n"
-        # Ajout du message Check X (Twitter)
         if symbol:
             msg += f"🔎 *Check X:* [Recherche X ${symbol}](https://twitter.com/search?q=%24{symbol}&src=typed_query)\n\n"
         msg += "📍 *Liens Utiles:*\n"
