@@ -20,7 +20,7 @@ logging.info("✅ Fichier lancé correctement — import os OK")
 app = Flask(__name__)
 
 # --- Authentification RugCheck robuste ---
-class RugCheckRateLimitError(Exception):
+class RugCheckRateLimitError(Exception):      
     pass
 
 class RugCheckAuthenticator:
