@@ -6,11 +6,8 @@ from datetime import datetime
 from flask import Flask, request, jsonify
 from threading import Thread
 from bs4 import BeautifulSoup
-import base58
-from solders.keypair import Keypair
 import logging
 
-# === CONFIG LOGGING ===
 logging.basicConfig(
     level=logging.DEBUG,
     format='%(asctime)s %(levelname)s %(message)s',
@@ -18,89 +15,6 @@ logging.basicConfig(
 logging.info("✅ Fichier lancé correctement — import os OK")
 
 app = Flask(__name__)
-
-# --- Authentification RugCheck robuste ---
-class RugCheckRateLimitError(Exception):      
-    pass
-
-class RugCheckAuthenticator:
-    def __init__(self):
-        self.token = None
-        self.last_login_time = 0
-        self.backoff = 10
-        self.max_backoff = 600
-
-    def login(self):
-        if self.token and not self.token_expired():
-            return self.token
-        attempt = 0
-        while True:
-            try:
-                token = self.rugcheck_login_request()
-                self.token = token
-                self.last_login_time = time.time()
-                self.backoff = 10
-                logging.info("✅ Login RugCheck réussi")
-                return token
-            except RugCheckRateLimitError:
-                logging.error("❌ Rate limit! Attente de %ds avant nouvel essai.", self.backoff)
-                time.sleep(self.backoff)
-                self.backoff = min(self.backoff * 2, self.max_backoff)
-                attempt += 1
-            except Exception as e:
-                logging.error("❌ Erreur login RugCheck: %s", str(e))
-                break
-
-    def token_expired(self):
-        # Optionnel: à améliorer si tu veux vérifier l'expiration réelle du token
-        return False
-
-    def rugcheck_login_request(self):
-        if not RUGCHECK_SOLANA_PRIVATE_KEY or not RUGCHECK_PUBLIC_ADDRESS:
-            logging.error("❌ RUGCHECK secrets missing (RUGCHECK_SOLANA_PRIVATE_KEY or RUGCHECK_PUBLIC_ADDRESS absent)")
-            return None
-        try:
-            try:
-                priv_bytes = bytes.fromhex(RUGCHECK_SOLANA_PRIVATE_KEY)
-            except Exception:
-                priv_bytes = base58.b58decode(RUGCHECK_SOLANA_PRIVATE_KEY)
-            if len(priv_bytes) == 32:
-                kp = Keypair.from_seed(priv_bytes)
-            elif len(priv_bytes) == 64:
-                kp = Keypair.from_bytes(priv_bytes)
-            else:
-                raise ValueError("La clé privée doit faire 32 ou 64 bytes")
-            public_key_str = str(kp.pubkey())
-            timestamp = int(time.time())
-            message_dict = {
-                "message": "Sign-in to Rugcheck.xyz",
-                "publicKey": public_key_str,
-                "timestamp": timestamp
-            }
-            to_sign = f"{message_dict['message']}|{message_dict['publicKey']}|{message_dict['timestamp']}".encode()
-            signature = kp.sign_message(to_sign)
-            signature_bytes = list(bytes(signature))
-            payload = {
-                "message": message_dict,
-                "signature": {"data": signature_bytes, "type": "ed25519"},
-                "wallet": public_key_str
-            }
-            url = "https://api.rugcheck.xyz/auth/login/solana"
-            resp = requests.post(url, json=payload, timeout=10)
-            if resp.status_code == 429:
-                raise RugCheckRateLimitError()
-            if resp.status_code == 200:
-                token = resp.json().get("token")
-                logging.info("✅ RugCheck login OK")
-                return token
-            else:
-                logging.error(f"❌ RugCheck login failed: {resp.status_code} {resp.text}")
-                return None
-        except Exception as e:
-            logging.exception(f"❌ RugCheck login error: {e}")
-            return None
-
-# --- Fin ajout authentification RugCheck robuste ---
 
 ADMIN_USER_ID = os.getenv("ADMIN_USER_ID", "Glacesol")
 
@@ -124,13 +38,6 @@ TELEGRAM_TOKEN = load_secret("/etc/secrets/TELEGRAM_TOKEN", "TELEGRAM_TOKEN")
 CHAT_ID = load_secret("/etc/secrets/CHAT_ID", "CHAT_ID")
 HELIUS_API_KEY = load_secret("/etc/secrets/HELIUS_API", "HELIUS_API_KEY")
 CALLSTATIC_API = load_secret("/etc/secrets/CALLSTATIC_API", "CALLSTATIC_API")
-
-# Correction ici : secrets Rugcheck gérés comme les autres
-RUGCHECK_SOLANA_PRIVATE_KEY = load_secret("/etc/secrets/RUGCHECK_SOLANA_PRIVATE_KEY", "RUGCHECK_SOLANA_PRIVATE_KEY")
-RUGCHECK_PUBLIC_ADDRESS = load_secret("/etc/secrets/RUGCHECK_PUBLIC_ADDRESS", "RUGCHECK_PUBLIC_ADDRESS")
-
-# --- Instanciation du nouvel authentificateur RugCheck ---
-rugcheck_auth = RugCheckAuthenticator()
 
 MEMORY_FILE = "token_memory_ultimate.json"
 TRACKING_FILE = "token_tracking.json"
@@ -187,38 +94,25 @@ def get_scamr_holders(token_address):
         return "N/A"
 
 def get_rugcheck_data(token_address):
-    def call():
-        token = rugcheck_auth.login()
-        if not token:
-            logging.error("❌ No RugCheck token")
-            return None, None, None, 0
-        url = f"https://api.rugcheck.xyz/v1/tokens/{token_address}/report/summary"
-        headers = {"Authorization": f"Bearer {token}"}
-        try:
-            response = requests.get(url, headers=headers, timeout=2.5)
-            if response.status_code == 200 and response.text.strip():
-                data = response.json()
-                score = data.get("score_normalised")
-                risks = data.get("risks", [])
-                honeypot = any("honeypot" in r["name"].lower() for r in risks)
-                lp_locked = all(
-                    "liquidity" not in r["name"].lower() or "not" not in r["description"].lower()
-                    for r in risks
-                )
-                holders = data.get("holders", 0) or 0
-                return score, honeypot, lp_locked, holders
-            else:
-                logging.error(f"❌ RugCheck data error: {response.status_code} {response.text}")
-        except Exception as e:
-            logging.error(f"❌ RugCheck API error: {e}")
-        return None, None, None, 0
+    url = f"https://api.rugcheck.xyz/v1/tokens/{token_address}/report"
     try:
-        result = call()
-        if result == (None, None, None, 0):
-            result = call()
-        return result
+        resp = requests.get(url, timeout=5)
+        if resp.status_code == 200:
+            data = resp.json()
+            score = data.get("score_normalised")
+            risks = data.get("risks", [])
+            honeypot = any("honeypot" in r["name"].lower() for r in risks)
+            lp_locked = all(
+                "liquidity" not in r["name"].lower() or "not" not in r["description"].lower()
+                for r in risks
+            )
+            holders = data.get("holders", 0) or 0
+            return score, honeypot, lp_locked, holders
+        else:
+            logging.error(f"RugCheck public error: {resp.status_code} {resp.text}")
+            return None, None, None, 0
     except Exception as e:
-        logging.error(f"❌ RugCheck call error: {e}")
+        logging.error(f"RugCheck API error: {e}")
         return None, None, None, 0
 
 def get_bonding_curve(token_address):
@@ -535,7 +429,7 @@ def ask_gpt(prompt):
                     "role": "system",
                     "content": (
                         "Tu es un expert en trading crypto spécialisé dans les tokens ultra-récents sur Pump.fun (Solana). "
-                        "Tu as l'expérience de TendersAlt : tu appliques des stratégies simples, sans émotions, en t'appuyant sur des probabilités, des setups Fibonacci, et l'observation des wallets. "
+                        "Tu as l'expérience de TendersAlt : tu appliques des stratégies simples, sans émotions, en t'appuyant sur des probabilités, des setups Fibonacci, et l'observation des volumes. "
                         "Analyse objectivement, sois direct, concis, stratégique."
                     )
                 },
@@ -594,8 +488,7 @@ def analyze_token():
     top5_distribution = " | ".join([f"{p}%" for p in (top_list[:5] if top_list else [])]) or "N/A"
 
     prompt = f"""
-Tu es un expert en trading crypto spécialisé dans les tokens ultra-récents sur Pump.fun (Solana). Tu as l'expérience de TendersAlt : tu appliques des stratégies simples, sans émotions, en t'appuyant sur des probabilités, des setups Fibonacci, et l'observation des wallets.
-
+Tu es un expert en trading crypto spécialisé dans les tokens ultra-récents sur Pump.fun (Solana). Tu as l'expérience de TendersAlt : tu appliques des stratégies simples, sans émotions, en t'appuyant sur des probabilités.
 Analyse ce token objectivement en te basant sur les infos suivantes :
 
 - Nom du token : {name}
@@ -612,7 +505,6 @@ Analyse ce token objectivement en te basant sur les infos suivantes :
 - Score de confiance Scamr.io : {scamr_note}
 
 ---
-
 ✅ Réponds comme si tu étais un trader pro :
 
 1. **Est-ce un setup intéressant ? Pourquoi ?**
