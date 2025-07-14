@@ -14,6 +14,18 @@ logging.basicConfig(
 )
 logging.info("✅ Fichier lancé correctement — import os OK")
 
+def save_for_analysis(token_name):
+    try:
+        with open("tokens_to_analyze.json", "r") as f:
+            tokens = json.load(f)
+    except FileNotFoundError:
+        tokens = []
+
+    if token_name not in tokens:
+        tokens.append(token_name)
+        with open("tokens_to_analyze.json", "w") as f:
+            json.dump(tokens, f)
+
 app = Flask(__name__)
 
 ADMIN_USER_ID = os.getenv("ADMIN_USER_ID", "Glacesol")
@@ -310,6 +322,7 @@ def check_tokens():
         tracking[token_address] = {"symbol": symbol, "initial": mc, "current": mc, "alerts": [], "timestamp": now}
 
         send_telegram_message(msg, token_address)
+        save_for_analysis(token_address)
         logging.info(f"✅ Telegram message sent for token: {symbol}")
 
     save_json(memory, MEMORY_FILE)
