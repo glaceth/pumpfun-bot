@@ -342,11 +342,18 @@ def check_tokens():
             msg += "🧬 *Adresse du Token:*\n"
             msg += f"`{token_address}`\n"
 
-        memory[token_address] = now
+        # PATCH TRACKING ENRICHIT
         tracking[token_address] = {
             "symbol": symbol,
+            "name": name,
             "initial": mc,
             "current": mc,
+            "volume": volume,
+            "holders": holders,
+            "rugscore": rugscore,
+            "bonding": get_bonding_curve(token_address),
+            "top_holders": top_holders,
+            "scamr": get_scamr_holders(token_address),
             "alerts": [],
             "timestamp": now
         }
@@ -461,8 +468,12 @@ def analyze_token():
         name = token_data.get('name', token_data.get('symbol', 'N/A'))
         symbol = token_data.get('symbol', 'N/A')
         market_cap = token_data.get('current', 'N/A')
-        volume = token_data.get('volume', 'N/A')
-        holders = token_data.get('holders', 'N/A')
+        volume = token_data.get('volume') or 'N/A'
+        holders = token_data.get('holders') or 'N/A'
+        bonding_percent = token_data.get('bonding') or get_bonding_curve(token_address)
+        rugscore = token_data.get('rugscore') or get_rugcheck_data(token_address)[0]
+        top_list = token_data.get('top_holders') or get_top_holders(token_address)
+        scamr_note = token_data.get('scamr') or get_scamr_holders(token_address)
     else:
         moralis_url = "https://solana-gateway.moralis.io/token/mainnet/exchange/pumpfun/graduated?limit=100"
         headers = {"Accept": "application/json", "X-API-Key": API_KEY}
@@ -481,11 +492,14 @@ def analyze_token():
         market_cap = moralis_data.get('fullyDilutedValuation', 'N/A')
         volume = moralis_data.get('liquidity', 'N/A')
         holders = moralis_data.get('holders', 'N/A')
+        bonding_percent = get_bonding_curve(token_address)
+        rugscore = get_rugcheck_data(token_address)[0]
+        top_list = get_top_holders(token_address)
+        scamr_note = get_scamr_holders(token_address)
 
-    rugscore, honeypot, lp_locked, holders_rug, *_ = get_rugcheck_data(token_address)
-    bonding_percent = get_bonding_curve(token_address)
-    top_list = get_top_holders(token_address)
-    scamr_note = get_scamr_holders(token_address)
+    rugcheck_result = get_rugcheck_data(token_address)
+    lp_locked = rugcheck_result[2] if rugcheck_result and len(rugcheck_result) > 2 else False
+    holders_rug = rugcheck_result[3] if rugcheck_result and len(rugcheck_result) > 3 else None
     lp_status = "Locked" if lp_locked else "Not locked"
     smart_wallets = "Oui" if holders_rug and holders_rug > 100 else "Non"
     mentions = search_twitter_mentions(symbol)
