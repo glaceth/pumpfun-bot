@@ -210,15 +210,14 @@ def search_twitter_mentions(symbol):
         return f"https://twitter.com/search?q=%24{symbol}&src=typed_query"
     return ""
 
-# ----------- AJOUT : ENVOI VERS TENDY API -----------
-def send_token_to_tendy(token_data):
-    url = "https://tendy-api.onrender.com/new_token"
+# AJOUT : envoi à une API externe (Tendy bot ou autre)
+def send_to_tendy_api(token_data):
+    url = "https://tendy-api.onrender.com"  # <-- Mets ici l'URL de ton API cible
     try:
-        response = requests.post(url, json=token_data)
-        print(f"Tendy API response: {response.status_code} {response.text}")
+        response = requests.post(url, json=token_data, timeout=10)
+        logging.info(f"✅ Token envoyé à l'API externe: {response.status_code}")
     except Exception as e:
-        print(f"Erreur d'envoi vers Tendy API: {e}")
-# -----------------------------------------------------
+        logging.error(f"❌ Erreur d'envoi à l'API externe: {e}")
 
 def check_tokens():
     logging.info("🔍 Checking tokens...")
@@ -262,10 +261,12 @@ def check_tokens():
         rugscore, honeypot, lp_locked, holders, volume, top_holders, freeze_removed, mint_revoked, risk_label = get_rugcheck_data(token_address)
         logging.info(f"🔎 Token found: {symbol} — MC: {mc} — Holders: {holders}")
 
+        # --- FILTRE TOP HOLDER > 30% ---
         if top_holders and top_holders[0] >= 30:
             logging.info(f"❌ Top holder >= 30% ({top_holders[0]}%) – skipping token")
             memory[token_address] = now
             continue
+        # --- FIN FILTRE ---
 
         if mc < 45000 or lq < 8000 or (holders is not None and holders < 80):
             logging.info("❌ Filtered out due to MC, liquidity or holders")
@@ -279,6 +280,7 @@ def check_tokens():
             memory[token_address] = now
             continue
 
+        # -------- PATCH RUGSCORE < 40 -------- #
         attention = ""
         if rugscore is not None and rugscore < 40:
             if holders is not None and holders >= 500:
@@ -290,6 +292,7 @@ def check_tokens():
                 continue
         elif rugscore is not None and rugscore >= 70:
             attention = f"\n✅ *RugScore élevé ({rugscore}/100) – plutôt rassurant, mais DYOR !*"
+        # -------- FIN PATCH -------- #
 
         msg = "🚨 *New Token Detected!*\n\n"
         if name: msg += f"💰 *Name:* {name}\n"
@@ -330,25 +333,21 @@ def check_tokens():
         save_for_analysis(token_address)
         logging.info(f"✅ Telegram message sent for token: {symbol}")
 
-        # -------- ENVOI VERS TENDY API --------
-        token_data = {
-            "token": token_address,
+        # ENVOI À L'API EXTERNE APRÈS LES FILTRES
+        token_payload = {
+            "token_address": token_address,
             "name": name,
             "symbol": symbol,
-            "market_cap": mc,
-            "volume": volume,
+            "mc": mc,
             "holders": holders,
             "rugscore": rugscore,
             "honeypot": honeypot,
             "lp_locked": lp_locked,
             "top_holders": top_holders,
-            "freeze_removed": freeze_removed,
-            "mint_revoked": mint_revoked,
-            "risk_label": risk_label,
-            "detected_at": datetime.utcnow().isoformat() + "Z"
+            "timestamp": now
         }
-        send_token_to_tendy(token_data)
-        # ---------------------------------------
+        send_to_tendy_api(token_payload)
+        # Fin ajout
 
     save_json(memory, MEMORY_FILE)
     save_json(tracking, TRACKING_FILE)
