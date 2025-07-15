@@ -28,6 +28,15 @@ def save_for_analysis(token_name):
 
 app = Flask(__name__)
 
+@app.route("/scan_tokens", methods=["POST"])
+def scan_tokens():
+    """
+    Endpoint appelé par Tendy API pour lancer un scan des tokens.
+    """
+    # Lance le scan en thread pour ne pas bloquer la requête HTTP
+    Thread(target=check_tokens).start()
+    return jsonify({"status": "scan lancé"})
+
 ADMIN_USER_ID = os.getenv("ADMIN_USER_ID", "Glacesol")
 
 def load_secret(path, fallback_env=None):
