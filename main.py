@@ -368,16 +368,7 @@ def check_tokens():
     save_json(wallet_stats, WALLET_STATS_FILE)
 
     # ENVOI À L'API TENDY (UNE SEULE FOIS!)
-    tokens_list = []
-    for token_address, track in tracking.items():
-        tokens_list.append({
-            "token_address": token_address,
-            "symbol": track.get("symbol"),
-            "initial": track.get("initial"),
-            "current": track.get("current"),
-            "alerts": track.get("alerts"),
-            "timestamp": track.get("timestamp")
-        })
+       tokens_list.append(track | {"token_address": token_address})
 
     try:
         with open("analyses_history.json", "r", encoding="utf-8") as f:
