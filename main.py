@@ -220,13 +220,20 @@ def search_twitter_mentions(symbol):
     return ""
 
 # AJOUT : envoi à une API externe (Tendy bot ou autre)
-def send_to_tendy_api(token_data):
-    url = "https://tendy-api.onrender.com"  # <-- Mets ici l'URL de ton API cible
+def send_to_tendy_api(tokens, analyses=None):
+    api_base = "https://tendy-api.onrender.com"  # ton URL API
     try:
-        response = requests.post(url, json=token_data, timeout=10)
-        logging.info(f"✅ Token envoyé à l'API externe: {response.status_code}")
+        # Envoie la liste complète des tokens
+        response_tokens = requests.post(f"{api_base}/tokens", json=tokens, timeout=10)
+        logging.info(f"✅ Tokens envoyés à l'API Tendy: {response_tokens.status_code}")
+
+        # Si tu veux aussi envoyer l'historique des analyses
+        if analyses is not None:
+            response_analyses = requests.post(f"{api_base}/analyses_history", json=analyses, timeout=10)
+            logging.info(f"✅ Analyses envoyées à l'API Tendy: {response_analyses.status_code}")
+
     except Exception as e:
-        logging.error(f"❌ Erreur d'envoi à l'API externe: {e}")
+        logging.error(f"❌ Erreur d'envoi à l'API Tendy: {e}")
 
 def check_tokens():
     logging.info("🔍 Checking tokens...")
@@ -336,31 +343,43 @@ def check_tokens():
             msg += f"`{token_address}`\n"
 
         memory[token_address] = now
-        tracking[token_address] = {"symbol": symbol, "initial": mc, "current": mc, "alerts": [], "timestamp": now}
+        tracking[token_address] = {
+            "symbol": symbol,
+            "initial": mc,
+            "current": mc,
+            "alerts": [],
+            "timestamp": now
+        }
 
         send_telegram_message(msg, token_address)
         save_for_analysis(token_address)
         logging.info(f"✅ Telegram message sent for token: {symbol}")
 
-        # ENVOI À L'API EXTERNE APRÈS LES FILTRES
-        token_payload = {
-            "token_address": token_address,
-            "name": name,
-            "symbol": symbol,
-            "mc": mc,
-            "holders": holders,
-            "rugscore": rugscore,
-            "honeypot": honeypot,
-            "lp_locked": lp_locked,
-            "top_holders": top_holders,
-            "timestamp": now
-        }
-        send_to_tendy_api(token_payload)
-        # Fin ajout
-
+    # SAUVEGARDE LOCALE
     save_json(memory, MEMORY_FILE)
     save_json(tracking, TRACKING_FILE)
     save_json(wallet_stats, WALLET_STATS_FILE)
+
+    # ENVOI À L'API TENDY (UNE SEULE FOIS!)
+    tokens_list = []
+    for token_address, track in tracking.items():
+        tokens_list.append({
+            "token_address": token_address,
+            "symbol": track.get("symbol"),
+            "initial": track.get("initial"),
+            "current": track.get("current"),
+            "alerts": track.get("alerts"),
+            "timestamp": track.get("timestamp")
+        })
+
+    try:
+        with open("analyses_history.json", "r", encoding="utf-8") as f:
+            analyses_dict = json.load(f)
+    except Exception:
+        analyses_dict = {}
+
+    send_to_tendy_api(tokens_list, analyses_dict)
+    
 
 def run_flask():
     port = int(os.environ.get("PORT", 10000))
