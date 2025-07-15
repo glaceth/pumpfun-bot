@@ -363,18 +363,20 @@ def check_tokens():
         logging.info(f"✅ Telegram message sent for token: {symbol}")
 
     # SAUVEGARDE LOCALE
-    save_json(memory, MEMORY_FILE)
-    save_json(tracking, TRACKING_FILE)
-    save_json(wallet_stats, WALLET_STATS_FILE)
+save_json(memory, MEMORY_FILE)
+save_json(tracking, TRACKING_FILE)
+save_json(wallet_stats, WALLET_STATS_FILE)
 
-    # ENVOI À L'API TENDY (UNE SEULE FOIS!)
-       tokens_list.append(track | {"token_address": token_address})
+# ENVOI À L'API TENDY (UNE SEULE FOIS!)
+tokens_list = []
+for token_address, track in tracking.items():
+    tokens_list.append(track | {"token_address": token_address})
 
-    try:
-        with open("analyses_history.json", "r", encoding="utf-8") as f:
-            analyses_dict = json.load(f)
-    except Exception:
-        analyses_dict = {}
+try:
+    with open("analyses_history.json", "r", encoding="utf-8") as f:
+        analyses_dict = json.load(f)
+except Exception:
+    analyses_dict = {}
 
     send_to_tendy_api(tokens_list, analyses_dict)
     
