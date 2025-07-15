@@ -210,6 +210,16 @@ def search_twitter_mentions(symbol):
         return f"https://twitter.com/search?q=%24{symbol}&src=typed_query"
     return ""
 
+# --------------- AJOUT : Fonction d'envoi vers l'API Tendy ---------------
+def send_token_to_tendy(token_data):
+    url = "https://tendy-api.onrender.com/new_token"  # URL de ton API Tendy sur Render
+    try:
+        response = requests.post(url, json=token_data)
+        print(f"Tendy API response: {response.status_code} {response.text}")
+    except Exception as e:
+        print(f"Erreur d'envoi vers Tendy API: {e}")
+# -------------------------------------------------------------------------
+
 def check_tokens():
     logging.info("🔍 Checking tokens...")
     try:
@@ -324,6 +334,26 @@ def check_tokens():
         send_telegram_message(msg, token_address)
         save_for_analysis(token_address)
         logging.info(f"✅ Telegram message sent for token: {symbol}")
+
+        # -------- AJOUT : Envoi à Tendy API --------
+        token_data = {
+            "token": token_address,
+            "name": name,
+            "symbol": symbol,
+            "market_cap": mc,
+            "volume": volume,
+            "holders": holders,
+            "rugscore": rugscore,
+            "honeypot": honeypot,
+            "lp_locked": lp_locked,
+            "top_holders": top_holders,
+            "freeze_removed": freeze_removed,
+            "mint_revoked": mint_revoked,
+            "risk_label": risk_label,
+            "detected_at": datetime.utcnow().isoformat() + "Z"
+        }
+        send_token_to_tendy(token_data)
+        # -------------------------------------------
 
     save_json(memory, MEMORY_FILE)
     save_json(tracking, TRACKING_FILE)
